@@ -4,11 +4,12 @@ A native macOS app (Swift 6, SwiftUI) that downloads audio from URLs you have pe
 download, identifies and tags it, files it into a clean folder structure under `~/Music/LocalMusic`,
 and plays it back offline. No accounts, no analytics, no cloud.
 
-**Status:** Phase 1 (working MVP) is complete: URL input, single-item and playlist downloads with
-live progress, a queue with configurable concurrency, automatic filing into the library, a
-library index that can be rebuilt from disk, playback with media-key support, and Finder
-integration. Phases 2–4 (tag editing, artwork, MusicBrainz identification, albums/artists/playlists)
-are described in `docs/SPEC.md` and `docs/superpowers/`.
+**Status:** Phases 1–3 are complete: downloads with live progress and a queue, automatic filing,
+a rebuildable library index, playback with media keys, Finder integration, title cleanup, native
+tag writing (M4A/MP3/FLAC) with artwork, a metadata editor, duplicate handling, MusicBrainz
+identification with confidence gating and a manual match picker, Cover Art Archive artwork, and
+optional AcoustID fingerprinting. Phase 4 (albums, artists, playlists, full library experience) is
+described in `docs/SPEC.md`.
 
 ## Requirements
 
@@ -25,7 +26,8 @@ are described in `docs/SPEC.md` and `docs/superpowers/`.
 brew install yt-dlp ffmpeg
 ```
 
-Optional fingerprinting support (not yet used by Phase 1):
+Optional fingerprinting support (used only when title/artist matching is inconclusive, and only if
+you add an AcoustID API key in **Settings → Metadata**):
 
 ```sh
 brew install chromaprint
@@ -103,12 +105,39 @@ Set `SSL_CERT_FILE` yourself to override.
 
 ## MusicBrainz API usage
 
-Planned for Phase 3. The design: candidates are queried from the MusicBrainz recording search with
-a descriptive `User-Agent` (`LocalMusic/<version> (<contact>)`), rate-limited to one request per
-second, cached under `Application Support/LocalMusic/MetadataCache`, and ranked by artist, title,
-duration, album and release-date similarity. Only high-confidence matches are applied
-automatically; ambiguous ones are offered as a short list. Cover art comes from the Cover Art
-Archive. Nothing in Phase 1 contacts MusicBrainz.
+After a download the app tries to identify the actual recording instead of trusting the upload
+title:
+
+1. Source metadata (`.info.json`) and embedded tags are read; the title is cleaned of noise
+   (Official Video, Lyrics, HD, 4K, Visualizer, Remastered, "- Topic" channels…) and split into
+   artist/title when it follows the `Artist - Title` pattern.
+2. The MusicBrainz recording search is queried with a Lucene expression such as
+   `recording:"Jóga" AND artist:"Björk" AND dur:[290000 TO 320000]`. If nothing convincing comes
+   back, a second query drops the duration window (and the artist, if it was only a channel guess).
+3. Candidates are scored 0–1 from title similarity (35 %), artist similarity (30 %), duration
+   closeness (25 %) and release quality (10 %), with penalties for live/remix versions the user did
+   not ask for and for recordings whose length is far off. A recording whose length MusicBrainz does
+   not know can never be applied automatically.
+4. The leading candidates are refreshed with a full recording lookup so the release is chosen from
+   complete data: official, non-compilation, album before EP before single, earliest date first
+   (configurable), and matching an album name when one was known.
+5. Matches at or above the confidence threshold (default 85 %) are applied; otherwise the original
+   metadata stays and the best few candidates are offered under **Choose Match…** on the queue row,
+   or later via **Re-identify Metadata…** in the library.
+6. Cover art is fetched from the Cover Art Archive (release front, then release-group front) and,
+   when the setting is on, replaces the video thumbnail.
+
+Requests carry the User-Agent `LocalMusic/0.1 (open-source macOS music organizer; local desktop
+app)`, are spaced at least 1.1 s apart, retried with backoff on 503/429, and cached for 30 days
+under `~/Library/Application Support/LocalMusic/MetadataCache` (clear it in **Settings →
+Advanced**). MusicBrainz downtime never fails a download; the track is kept with its original tags.
+
+### AcoustID (optional)
+
+When text matching stays below the threshold and both `fpcalc` and an AcoustID API key are
+available, the file is fingerprinted (`fpcalc -json`), looked up at `api.acoustid.org`, and the
+returned MusicBrainz recording IDs are scored like any other candidate with a fingerprint bonus. The
+key lives in the macOS Keychain and is never logged.
 
 ## Library folder structure
 
@@ -150,14 +179,18 @@ app moves files to the Trash.
   newer SDK than the compiler. `Scripts/sdk.sh` works around it; alternatively reinstall the CLT or
   install Xcode.
 - **`swift build` crashes on launch.** Some CLT installs ship a broken SwiftPM; use `make` instead.
+- **"MusicBrainz is busy or down (HTTP 503)".** MusicBrainz rate-limits per IP address; on a shared
+  network the limit may already be used up. The track keeps its original metadata; use
+  **Re-identify Metadata…** later. Responses are cached, so repeated lookups do not cost requests.
 - **Logs.** **Library → Open Logs Folder** opens `~/Library/Logs/LocalMusic/`. Logs never contain
   API keys.
 
 ## Privacy model
 
 - Everything stays on this Mac: the index, artwork cache, logs, and the download archive.
-- Network access happens only through yt-dlp to the site you pasted, and (in later phases) to
-  MusicBrainz / Cover Art Archive for metadata you explicitly enable.
+- Network access happens only through yt-dlp to the site you pasted, to MusicBrainz and the Cover
+  Art Archive for identification (can be switched off in Settings → Metadata), to GitHub's release
+  page when you ask to check for tool updates, and to AcoustID only if you configure a key.
 - No analytics, telemetry, accounts, or cloud sync. No third-party SDKs.
 - Pasted URLs and downloaded metadata are treated as untrusted: they are never passed through a
   shell, and every derived file path is checked against the library root before use.

@@ -5,6 +5,7 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             DownloadSettingsView().tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
+            MetadataSettingsView().tabItem { Label("Metadata", systemImage: "tag") }
             OrganizationSettingsView().tabItem { Label("Organization", systemImage: "folder") }
             PlaybackSettingsView().tabItem { Label("Playback", systemImage: "play.circle") }
             AdvancedSettingsView().tabItem { Label("Advanced", systemImage: "wrench.and.screwdriver") }
@@ -56,6 +57,47 @@ struct DownloadSettingsView: View {
     }
 }
 
+struct MetadataSettingsView: View {
+    @Environment(AppEnvironment.self) private var env
+    @State private var acoustIDKey: String = KeychainStore.get(KeychainStore.acoustIDAccount) ?? ""
+    @State private var keySaved = false
+
+    var body: some View {
+        @Bindable var settings = env.settings
+        Form {
+            Section("MusicBrainz") {
+                Toggle("Identify downloads with MusicBrainz automatically", isOn: $settings.autoQueryMusicBrainz)
+                LabeledContent("Minimum confidence to apply a match automatically") {
+                    HStack {
+                        Slider(value: $settings.minimumAutoMatchConfidence, in: 0.5...0.99, step: 0.01).frame(width: 180)
+                        Text(String(format: "%.0f%%", settings.minimumAutoMatchConfidence * 100)).monospacedDigit().frame(width: 40)
+                    }
+                }
+                Toggle("Prefer the original (earliest) release", isOn: $settings.preferEarliestRelease)
+                Toggle("Replace video thumbnails with album artwork when a release is matched", isOn: $settings.replaceThumbnailsWithAlbumArt)
+                Text("Requests are limited to one per second, cached locally for 30 days, and sent with the app's own User-Agent. Matches below the threshold are offered for manual selection; nothing is invented.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("AcoustID fingerprinting (optional)") {
+                LabeledContent("fpcalc") {
+                    if env.tools[.fpcalc]?.isUsable == true { Text("installed \(env.tools[.fpcalc]?.version ?? "")").font(.caption) }
+                    else { Text("not installed — brew install chromaprint").font(.caption).foregroundStyle(.secondary) }
+                }
+                HStack {
+                    SecureField("AcoustID API key", text: $acoustIDKey)
+                    Button(keySaved ? "Saved" : "Save to Keychain") {
+                        keySaved = KeychainStore.set(acoustIDKey, account: KeychainStore.acoustIDAccount)
+                    }
+                }
+                Text("Used only when title/artist matching is inconclusive. The key is stored in the macOS Keychain and never written to logs. Get one at acoustid.org/new-application.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+}
+
 struct OrganizationSettingsView: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -103,6 +145,7 @@ struct PlaybackSettingsView: View {
 struct AdvancedSettingsView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var confirmRebuild = false
+    @State private var cacheCleared = false
 
     var body: some View {
         @Bindable var settings = env.settings
@@ -133,9 +176,11 @@ struct AdvancedSettingsView: View {
             Section("Maintenance") {
                 HStack {
                     Button("Rebuild Library…") { confirmRebuild = true }
+                    Button("Clear Metadata Cache") { try? env.metadataCache.clear(); cacheCleared = true }
                     Button("Open Logs Folder") { env.openLogsFolder() }
                     Button("Reveal Music Folder") { env.revealLibraryFolder() }
                 }
+                if cacheCleared { Text("Metadata cache cleared.").font(.caption).foregroundStyle(.secondary) }
                 Text("Rebuilding drops the index and rescans every file under the music folder. Play counts and favorites for files that still exist are preserved by path.")
                     .font(.caption).foregroundStyle(.secondary)
             }

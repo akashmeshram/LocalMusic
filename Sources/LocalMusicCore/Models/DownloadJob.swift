@@ -88,6 +88,9 @@ public struct DownloadJob: Identifiable, Hashable, Sendable {
     public var pendingDuplicate: DuplicateDetector.Match?
     /// Short outcome note shown instead of the plain state label (e.g. "Skipped — duplicate").
     public var note: String?
+    /// MusicBrainz candidates left for the user when no match cleared the confidence bar.
+    public var candidates: [ScoredCandidate] = []
+    public var metadataOrigin: MetadataOrigin?
 
     public init(id: UUID = UUID(), sourceURL: URL, title: String, uploader: String? = nil,
                 thumbnailURL: URL? = nil, expectedDuration: TimeInterval? = nil,

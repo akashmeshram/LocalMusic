@@ -120,8 +120,14 @@ final class DownloadManager {
             job.finishedAt = nil
             job.note = nil
             job.pendingDuplicate = nil
+            job.candidates = []
         }
         pump()
+    }
+
+    /// Called after the user picked a match for a completed job.
+    func clearCandidates(_ id: UUID) {
+        update(id) { $0.candidates = []; $0.note = nil; $0.metadataOrigin = .musicBrainz }
     }
 
     /// Resolves a job that is waiting on a duplicate decision.
@@ -245,11 +251,35 @@ final class DownloadManager {
             update(id) { $0.state = .identifying }
             let identified = env.metadata.identify(source: result.metadata, embedded: tags, fallbackTitle: job.title, uploader: job.uploader)
             var finalTags = identified.tags
+            var origin = identified.origin
             update(id) { $0.title = finalTags.title }
             appendLog(id, "[LocalMusic] identified via \(identified.origin.rawValue) (confidence \(String(format: "%.2f", identified.confidence)))")
 
-            // Artwork: embedded art wins; otherwise the source thumbnail, squared and normalized.
-            var artworkData = tags.artwork
+            // MusicBrainz: only high-confidence matches are applied; the rest are offered to the user.
+            var coverArtData: Data?
+            if env.settings.autoQueryMusicBrainz {
+                let outcome = await env.identifier.identify(tags: finalTags, duration: tags.duration, file: fileURL, options: env.identifierOptions)
+                try Task.checkCancellation()
+                if let error = outcome.error { appendLog(id, "[LocalMusic] MusicBrainz: \(error.message)") }
+                for c in outcome.candidates { appendLog(id, String(format: "[LocalMusic]   %.2f  %@", c.score, c.summary)) }
+                if let best = outcome.accepted {
+                    finalTags = best.tags(over: finalTags)
+                    origin = .musicBrainz
+                    update(id) { $0.title = finalTags.title; $0.candidates = [] }
+                    appendLog(id, "[LocalMusic] accepted MusicBrainz match \(best.recording.id) (\(String(format: "%.2f", best.score)))\(outcome.usedFingerprint ? " via fingerprint" : "")")
+                    if env.settings.replaceThumbnailsWithAlbumArt {
+                        coverArtData = await env.coverArt.frontCover(releaseID: best.release?.id, releaseGroupID: best.release?.releaseGroupID)
+                    }
+                } else if !outcome.candidates.isEmpty {
+                    update(id) { $0.candidates = outcome.candidates }
+                    appendLog(id, "[LocalMusic] no match cleared \(String(format: "%.0f%%", env.settings.minimumAutoMatchConfidence * 100)); kept original metadata")
+                }
+            }
+            update(id) { $0.metadataOrigin = origin }
+
+            // Artwork: album art from the Cover Art Archive, then embedded art, then the source thumbnail.
+            var artworkData = coverArtData ?? tags.artwork
+            if coverArtData != nil { finalTags.artwork = .replace(coverArtData!) }
             if artworkData == nil, let thumb = result.metadata.thumbnailURL ?? job.thumbnailURL {
                 do {
                     let raw = try await env.artworkService.fetch(thumb)
@@ -324,6 +354,7 @@ final class DownloadManager {
                 job.resultFileURL = placed
                 job.resultTrackID = record.id
                 job.progress = DownloadProgress(fraction: 1, phase: "complete")
+                if !job.candidates.isEmpty { job.note = "Complete — metadata uncertain, \(job.candidates.count) possible match\(job.candidates.count == 1 ? "" : "es")" }
             }
             Log.info("complete: \(placed.path)", .download)
         } catch {

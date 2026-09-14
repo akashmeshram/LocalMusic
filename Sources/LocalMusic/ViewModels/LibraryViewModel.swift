@@ -166,6 +166,26 @@ final class LibraryViewModel {
         Log.info("saved tags for \(record.title)", .metadata)
     }
 
+    /// Applies a MusicBrainz candidate: tags, cover art when available, then the normal save path.
+    func apply(candidate: ScoredCandidate, to track: TrackRecord) async throws {
+        var tags = candidate.tags(over: TrackTags(record: track))
+        if env.settings.replaceThumbnailsWithAlbumArt,
+           let art = await env.coverArt.frontCover(releaseID: candidate.release?.id, releaseGroupID: candidate.release?.releaseGroupID) {
+            tags.artwork = .replace(art)
+        }
+        tags.comment = track.sourceURL
+        try await save(tags: tags, for: track)
+    }
+
+    /// Runs the MusicBrainz stage for an existing track and returns the ranked candidates.
+    func reidentify(_ track: TrackRecord) async -> RecordingIdentifier.Outcome {
+        var seed = TrackTags(record: track)
+        let parsed = TitleCleaner.parse(track.title, uploader: track.artist)
+        if parsed.artist != nil, seed.artist == nil { seed.artist = parsed.artist }
+        seed.title = parsed.title
+        return await env.identifier.identify(tags: seed, duration: track.duration, file: track.fileURL, options: env.identifierOptions)
+    }
+
     /// Moves files to the Trash (never a hard delete) and removes the index rows.
     func delete(_ selected: [TrackRecord]) async {
         let root = env.settings.musicDirectory

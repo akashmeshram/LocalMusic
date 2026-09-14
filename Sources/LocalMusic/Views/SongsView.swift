@@ -7,6 +7,7 @@ struct SongsView: View {
     @State private var selection = Set<TrackRecord.ID>()
     @State private var pendingDelete: [TrackRecord] = []
     @State private var editing: TrackRecord?
+    @State private var identifying: TrackRecord?
 
     private var tracks: [TrackRecord] { env.library.tracks(for: scope) }
 
@@ -44,6 +45,7 @@ struct SongsView: View {
             }
         }
         .sheet(item: $editing) { track in MetadataEditorView(track: track) }
+        .sheet(item: $identifying) { track in MatchPickerView(track: track, initialCandidates: []) }
         .confirmationDialog("Move \(pendingDelete.count) song(s) to the Trash?", isPresented: Binding(get: { !pendingDelete.isEmpty }, set: { if !$0 { pendingDelete = [] } })) {
             Button("Move to Trash", role: .destructive) {
                 let items = pendingDelete
@@ -132,6 +134,7 @@ struct SongsView: View {
             }
             Divider()
             Button("Edit Metadata…") { editing = first }.disabled(selected.count != 1)
+            Button("Re-identify Metadata…") { identifying = first }.disabled(selected.count != 1)
             Button("Reveal in Finder") { env.library.reveal(first) }.disabled(selected.count != 1)
             Button("Copy Source URL") { env.library.copySourceURL(first) }.disabled(selected.count != 1 || first.sourceURL == nil)
             Divider()

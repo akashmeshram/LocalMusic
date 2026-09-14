@@ -108,6 +108,16 @@ final class AppEnvironment {
     var artworkService: ArtworkService { ArtworkService(cache: artwork) }
     var tagWriter: TagWriterService { TagWriterService(ffmpeg: ffmpegService) }
     let metadata = MetadataService()
+    let metadataCache = MetadataCache()
+    let musicBrainz = MusicBrainzService()
+    var coverArt: CoverArtService { CoverArtService(cache: metadataCache, artwork: artworkService) }
+    var identifier: RecordingIdentifier { RecordingIdentifier(musicBrainz: musicBrainz, acoustID: AcoustIDService(cache: metadataCache)) }
+    var identifierOptions: RecordingIdentifier.Options {
+        RecordingIdentifier.Options(minimumAutoConfidence: settings.minimumAutoMatchConfidence,
+                                    preferEarliestRelease: settings.preferEarliestRelease,
+                                    acoustIDKey: KeychainStore.get(KeychainStore.acoustIDAccount),
+                                    fpcalc: tools[.fpcalc]?.isUsable == true ? tools[.fpcalc]?.path : nil)
+    }
 
     func makeDownloader() -> (any MediaDownloading)? {
         if useMockDownloader { return MockDownloader() }

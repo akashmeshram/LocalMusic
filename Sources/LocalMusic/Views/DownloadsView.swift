@@ -102,6 +102,7 @@ struct DownloadRow: View {
     let job: DownloadJob
     @State private var showDetails = false
     @State private var editingTrack: TrackRecord?
+    @State private var pickingTrack: TrackRecord?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -121,6 +122,9 @@ struct DownloadRow: View {
                     }
                     .font(.caption).foregroundStyle(.secondary)
                     Text(job.statusText).font(.caption).foregroundStyle(job.state == .failed ? .red : (job.pendingDuplicate != nil ? .orange : .secondary)).lineLimit(2)
+                    if !job.candidates.isEmpty, job.state == .complete, let id = job.resultTrackID, let track = env.library.trackByID[id] {
+                        Button("Choose Match…") { pickingTrack = track }.controlSize(.small).padding(.top, 2)
+                    }
                     if let dup = job.pendingDuplicate {
                         HStack(spacing: 8) {
                             Button("Skip") { env.downloads.resolveDuplicate(job.id, .skip) }
@@ -158,6 +162,9 @@ struct DownloadRow: View {
         }
         .padding(.vertical, 4)
         .sheet(item: $editingTrack) { MetadataEditorView(track: $0) }
+        .sheet(item: $pickingTrack) { track in
+            MatchPickerView(track: track, initialCandidates: job.candidates) { env.downloads.clearCandidates(job.id) }
+        }
         .contextMenu {
             if job.state.isTerminal {
                 if job.state != .complete { Button("Retry") { env.downloads.retry(job.id) } }
@@ -170,6 +177,7 @@ struct DownloadRow: View {
             if let id = job.resultTrackID, let track = env.library.trackByID[id] {
                 Button("Play") { env.playback.play(track) }
                 Button("Edit Metadata…") { editingTrack = track }
+                Button("Re-identify Metadata…") { pickingTrack = track }
             }
             Button("Copy Source URL") {
                 NSPasteboard.general.clearContents()
