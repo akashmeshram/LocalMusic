@@ -2,25 +2,48 @@ import Foundation
 import Observation
 import LocalMusicCore
 
-enum SidebarItem: String, Hashable, CaseIterable, Identifiable {
-    case songs, recentlyAdded, favorites, downloads
+enum SidebarItem: Hashable, Identifiable {
+    case songs, albums, artists, recentlyAdded, favorites, downloads
+    case playlist(UUID)
 
-    var id: String { rawValue }
+    var id: String {
+        switch self {
+        case .playlist(let id): "playlist-\(id.uuidString)"
+        default: title
+        }
+    }
     var title: String {
         switch self {
         case .songs: "Songs"
+        case .albums: "Albums"
+        case .artists: "Artists"
         case .recentlyAdded: "Recently Added"
         case .favorites: "Favorites"
         case .downloads: "Downloads"
+        case .playlist: "Playlist"
         }
     }
     var systemImage: String {
         switch self {
         case .songs: "music.note"
+        case .albums: "square.stack"
+        case .artists: "music.mic"
         case .recentlyAdded: "clock"
         case .favorites: "heart"
         case .downloads: "arrow.down.circle"
+        case .playlist: "music.note.list"
         }
+    }
+    static let libraryItems: [SidebarItem] = [.songs, .albums, .artists, .recentlyAdded, .favorites]
+}
+
+/// Drag payload for tracks: a plain string so it works with `NSItemProvider` across Table and List.
+enum TrackDrag {
+    static let prefix = "localmusic-tracks:"
+    static func payload(_ ids: [UUID]) -> String { prefix + ids.map(\.uuidString).joined(separator: ",") }
+    static func parse(_ string: String) -> [UUID]? {
+        guard string.hasPrefix(prefix) else { return nil }
+        return string.dropFirst(prefix.count).split(separator: ",").compactMap { UUID(uuidString: String($0)) }
     }
 }
 

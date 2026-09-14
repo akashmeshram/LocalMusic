@@ -68,7 +68,7 @@ struct SongsView: View {
 
     private var table: some View {
         @Bindable var library = env.library
-        return Table(tracks, selection: $selection, sortOrder: $library.sortOrder) {
+        return Table(of: TrackRecord.self, selection: $selection, sortOrder: $library.sortOrder) {
             TableColumn("") { track in
                 ArtworkView(fileName: track.artworkFileName, size: 28, cornerRadius: 3)
             }
@@ -98,9 +98,21 @@ struct SongsView: View {
                 .width(56)
             TableColumn("Date Added", value: \.dateAdded) { Text($0.dateAdded, format: .dateTime.day().month(.abbreviated).year()) }
                 .width(100)
+        } rows: {
+            ForEach(tracks) { track in
+                TableRow(track).itemProvider {
+                    let ids = selection.contains(track.id) ? tracks.filter { selection.contains($0.id) }.map(\.id) : [track.id]
+                    return NSItemProvider(object: TrackDrag.payload(ids) as NSString)
+                }
+            }
         }
         .contextMenu(forSelectionType: TrackRecord.ID.self) { ids in
-            contextMenu(for: resolve(ids))
+            let selected = resolve(ids)
+            if selected.isEmpty {
+                Button("Rescan Music Folder") { Task { await env.library.rescan() } }
+            } else {
+                TrackContextMenu(tracks: selected, all: tracks, editing: $editing, identifying: $identifying) { pendingDelete = $0 }
+            }
         } primaryAction: { ids in
             guard let first = ids.first, let index = tracks.firstIndex(where: { $0.id == first }) else { return }
             env.playback.play(tracks, startingAt: index)
@@ -115,30 +127,5 @@ struct SongsView: View {
 
     private func resolve(_ ids: Set<TrackRecord.ID>) -> [TrackRecord] {
         tracks.filter { ids.contains($0.id) }
-    }
-
-    @ViewBuilder
-    private func contextMenu(for selected: [TrackRecord]) -> some View {
-        if selected.isEmpty {
-            Button("Rescan Music Folder") { Task { await env.library.rescan() } }
-        } else {
-            let first = selected[0]
-            Button("Play") {
-                if selected.count == 1, let index = tracks.firstIndex(of: first) { env.playback.play(tracks, startingAt: index) } else { env.playback.play(selected) }
-            }
-            Button("Play Next") { for t in selected.reversed() { env.playback.playNext(t) } }
-            Button("Add to Queue") { for t in selected { env.playback.enqueue(t) } }
-            Divider()
-            Button(first.isFavorite && selected.count == 1 ? "Remove from Favorites" : "Add to Favorites") {
-                Task { for t in selected { await env.library.toggleFavorite(t) } }
-            }
-            Divider()
-            Button("Edit Metadata…") { editing = first }.disabled(selected.count != 1)
-            Button("Re-identify Metadata…") { identifying = first }.disabled(selected.count != 1)
-            Button("Reveal in Finder") { env.library.reveal(first) }.disabled(selected.count != 1)
-            Button("Copy Source URL") { env.library.copySourceURL(first) }.disabled(selected.count != 1 || first.sourceURL == nil)
-            Divider()
-            Button("Delete…", role: .destructive) { pendingDelete = selected }
-        }
     }
 }

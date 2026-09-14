@@ -5,6 +5,7 @@ struct NowPlayingBar: View {
     @Environment(AppEnvironment.self) private var env
     @State private var scrubValue: Double = 0
     @State private var isScrubbing = false
+    @State private var showQueue = false
 
     private var playback: PlaybackService { env.playback }
 
@@ -55,8 +56,13 @@ struct NowPlayingBar: View {
                 Slider(value: Binding(get: { Double(playback.volume) }, set: { playback.volume = Float($0) }), in: 0...1)
                     .frame(width: 90)
                 Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary).font(.caption)
+                Button { showQueue.toggle() } label: { Image(systemName: "list.bullet") }
+                    .buttonStyle(.plain).foregroundStyle(playback.queue.isEmpty ? .secondary : Color.accentColor)
+                    .help("Up Next")
+                    .popover(isPresented: $showQueue, arrowEdge: .bottom) { QueueView().environment(env) }
+                    .padding(.leading, 6)
             }
-            .frame(width: 150)
+            .frame(width: 180)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)

@@ -3,6 +3,7 @@ import CoreData
 /// The Core Data model, declared in code so no `.xcdatamodeld` compilation step is required.
 enum LibraryModel {
     static let trackEntityName = "Track"
+    static let playlistEntityName = "Playlist"
 
     static func make() -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
@@ -53,7 +54,20 @@ enum LibraryModel {
         let bySource = NSFetchIndexDescription(name: "bySource", elements: [NSFetchIndexElementDescription(property: attributes[2], collationType: .binary)])
         track.indexes = [byID, byPath, bySource]
 
-        model.entities = [track]
+        let playlist = NSEntityDescription()
+        playlist.name = playlistEntityName
+        playlist.managedObjectClassName = "NSManagedObject"
+        let playlistAttributes: [NSAttributeDescription] = [
+            attr("id", .UUIDAttributeType, optional: false),
+            attr("name", .stringAttributeType, optional: false, defaultValue: "Playlist"),
+            attr("createdAt", .dateAttributeType, optional: false),
+            attr("sortIndex", .integer32AttributeType, optional: false, defaultValue: 0),
+            attr("trackIDs", .stringAttributeType, optional: false, defaultValue: "[]"),
+        ]
+        playlist.properties = playlistAttributes
+        playlist.uniquenessConstraints = [["id"]]
+
+        model.entities = [track, playlist]
         return model
     }
 }

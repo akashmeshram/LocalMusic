@@ -64,6 +64,8 @@ enum LaunchOptions {
     }
 
     static var downloadURLs: [String] { values(for: "--download") }
+    /// `--select=songs|albums|artists|recent|favorites|downloads|playlist` (playlist creates a demo list if none exists).
+    static var initialSelection: String? { values(for: "--select").first }
 
     static var screenshotDirectory: URL? {
         values(for: "--screenshot").first.map { URL(fileURLWithPath: $0, isDirectory: true) }
@@ -86,8 +88,10 @@ enum LaunchOptions {
             // Composite over the window background so translucent materials look like they do on screen.
             let image = NSImage(size: view.bounds.size)
             image.lockFocus()
-            (window.backgroundColor ?? .windowBackgroundColor).setFill()
-            view.bounds.fill()
+            window.effectiveAppearance.performAsCurrentDrawingAppearance {
+                NSColor.windowBackgroundColor.setFill()
+                view.bounds.fill()
+            }
             rep.draw(in: view.bounds)
             image.unlockFocus()
             guard let tiff = image.tiffRepresentation, let flat = NSBitmapImageRep(data: tiff),

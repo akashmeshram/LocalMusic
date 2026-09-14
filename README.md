@@ -4,12 +4,13 @@ A native macOS app (Swift 6, SwiftUI) that downloads audio from URLs you have pe
 download, identifies and tags it, files it into a clean folder structure under `~/Music/LocalMusic`,
 and plays it back offline. No accounts, no analytics, no cloud.
 
-**Status:** Phases 1–3 are complete: downloads with live progress and a queue, automatic filing,
-a rebuildable library index, playback with media keys, Finder integration, title cleanup, native
-tag writing (M4A/MP3/FLAC) with artwork, a metadata editor, duplicate handling, MusicBrainz
-identification with confidence gating and a manual match picker, Cover Art Archive artwork, and
-optional AcoustID fingerprinting. Phase 4 (albums, artists, playlists, full library experience) is
-described in `docs/SPEC.md`.
+**Status:** all four phases of the specification are implemented: downloads with live progress and
+a queue, automatic filing, a rebuildable library index, playback with media keys and an Up Next
+queue, Finder integration, title cleanup, native tag writing (M4A/MP3/FLAC) with artwork, a
+metadata editor, duplicate handling, MusicBrainz identification with confidence gating and a manual
+match picker, Cover Art Archive artwork, optional AcoustID fingerprinting, Songs/Albums/Artists/
+Recently Added/Favorites views, playlists with drag-and-drop and M3U8 import/export, search, and
+system notifications when a batch of downloads finishes.
 
 ## Requirements
 
@@ -163,6 +164,22 @@ case-insensitive check, and no move or delete ever targets a path outside the li
 The index lives in `~/Library/Application Support/LocalMusic/Library.sqlite`. Files are the source
 of truth; **Library → Rebuild Library** drops the index and rescans the folder. Deleting from the
 app moves files to the Trash.
+
+## Library views and playlists
+
+- **Songs** is a sortable table (artwork, title, artist, album, year, duration, format, date
+  added) with a context menu: Play, Play Next, Add to Queue, Add to Playlist, Add to Favorites,
+  Edit Metadata, Re-identify Metadata, Reveal in Finder, Copy Source URL, Delete (to Trash).
+  ⌘I opens the editor for the selected song; ⌘1…⌘6 switch views.
+- **Albums** groups by album artist + album (tracks without an album form a per-artist *Singles*
+  card); **Artists** lists artists with their albums and tracks.
+- **Playlists** live in the local database. Create one with the **+** in the sidebar or ⌘⇧N, rename
+  or delete from its context menu, drag songs from the Songs table onto a playlist in the sidebar or
+  into the playlist view, reorder by dragging, and remove with Delete. **Export M3U8** writes an
+  Extended M3U file with paths relative to the file; **File → Import Playlist (M3U8)…** matches
+  entries against library paths and reports anything it could not find.
+- The **Up Next** button in the now-playing bar shows the playback queue; songs can be removed or
+  jumped to. Shuffle and repeat (off / all / one) are in the bar and the Controls menu.
 
 ## Troubleshooting
 

@@ -150,6 +150,58 @@ public final class LibraryStore: @unchecked Sendable {
         }
     }
 
+    // MARK: Playlists
+
+    public func playlists() async throws -> [PlaylistRecord] {
+        let ctx = background()
+        return try await ctx.perform {
+            let request = NSFetchRequest<NSManagedObject>(entityName: LibraryModel.playlistEntityName)
+            request.sortDescriptors = [NSSortDescriptor(key: "sortIndex", ascending: true), NSSortDescriptor(key: "createdAt", ascending: true)]
+            return try ctx.fetch(request).map(Self.playlistRecord)
+        }
+    }
+
+    public func savePlaylist(_ playlist: PlaylistRecord) async throws {
+        let ctx = background()
+        try await ctx.perform {
+            let object = try Self.findPlaylist(in: ctx, id: playlist.id)
+                ?? NSEntityDescription.insertNewObject(forEntityName: LibraryModel.playlistEntityName, into: ctx)
+            object.setValue(playlist.id, forKey: "id")
+            object.setValue(playlist.name, forKey: "name")
+            object.setValue(playlist.createdAt, forKey: "createdAt")
+            object.setValue(Int32(playlist.sortIndex), forKey: "sortIndex")
+            let ids = playlist.trackIDs.map(\.uuidString)
+            let json = (try? JSONSerialization.data(withJSONObject: ids)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+            object.setValue(json, forKey: "trackIDs")
+            if ctx.hasChanges { try ctx.save() }
+        }
+    }
+
+    public func deletePlaylist(id: UUID) async throws {
+        let ctx = background()
+        try await ctx.perform {
+            if let object = try Self.findPlaylist(in: ctx, id: id) { ctx.delete(object) }
+            if ctx.hasChanges { try ctx.save() }
+        }
+    }
+
+    private static func findPlaylist(in ctx: NSManagedObjectContext, id: UUID) throws -> NSManagedObject? {
+        let request = NSFetchRequest<NSManagedObject>(entityName: LibraryModel.playlistEntityName)
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        request.fetchLimit = 1
+        return try ctx.fetch(request).first
+    }
+
+    private static func playlistRecord(_ o: NSManagedObject) -> PlaylistRecord {
+        let json = o.value(forKey: "trackIDs") as? String ?? "[]"
+        let ids = ((try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String])?.compactMap(UUID.init) ?? []
+        return PlaylistRecord(id: o.value(forKey: "id") as? UUID ?? UUID(),
+                              name: o.value(forKey: "name") as? String ?? "Playlist",
+                              createdAt: o.value(forKey: "createdAt") as? Date ?? Date(),
+                              sortIndex: Int(o.value(forKey: "sortIndex") as? Int32 ?? 0),
+                              trackIDs: ids)
+    }
+
     // MARK: Mapping
 
     private static func find(in ctx: NSManagedObjectContext, id: UUID) throws -> NSManagedObject? {

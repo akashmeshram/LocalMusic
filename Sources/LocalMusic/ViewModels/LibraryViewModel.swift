@@ -7,6 +7,7 @@ import LocalMusicCore
 @Observable
 final class LibraryViewModel {
     private(set) var tracks: [TrackRecord] = []
+    private(set) var playlists: [PlaylistRecord] = []
     var searchText = ""
     var sortOrder: [KeyPathComparator<TrackRecord>] = [KeyPathComparator(\.dateAdded, order: .reverse)]
     private(set) var isScanning = false
@@ -29,6 +30,7 @@ final class LibraryViewModel {
     func load() async {
         do {
             tracks = try await env.store.allTracks()
+            playlists = try await env.store.playlists()
         } catch {
             errorMessage = LocalMusicError.wrap(error).message
         }
@@ -106,6 +108,137 @@ final class LibraryViewModel {
             }
         }
         return result.sorted(using: sortOrder)
+    }
+
+    // MARK: Grouping
+
+    struct AlbumGroup: Identifiable, Hashable {
+        let id: String
+        let title: String
+        let artist: String
+        let year: Int?
+        let tracks: [TrackRecord]
+        var artworkFileName: String? { tracks.first { $0.artworkFileName != nil }?.artworkFileName }
+        var duration: TimeInterval { tracks.reduce(0) { $0 + $1.duration } }
+        var isSingles: Bool { title == FileOrganizer.singlesFolder }
+    }
+
+    struct ArtistGroup: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let albums: [AlbumGroup]
+        var tracks: [TrackRecord] { albums.flatMap(\.tracks) }
+        var artworkFileName: String? { albums.first { $0.artworkFileName != nil }?.artworkFileName }
+    }
+
+    static func albumKey(_ t: TrackRecord) -> (artist: String, album: String) {
+        (t.albumArtist ?? t.artist ?? FileOrganizer.unknownArtist, t.album ?? FileOrganizer.singlesFolder)
+    }
+
+    /// Albums grouped by (album artist, album); tracks without an album form a per-artist "Singles" group.
+    var albums: [AlbumGroup] { makeAlbums(matching: searchText) }
+
+    var artists: [ArtistGroup] {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        var byArtist: [String: [AlbumGroup]] = [:]
+        for album in makeAlbums(matching: "") {
+            byArtist[album.artist.lowercased(), default: []].append(album)
+        }
+        return byArtist.values.map { list in ArtistGroup(id: list[0].artist.lowercased(), name: list[0].artist, albums: list) }
+            .filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+            .sorted { $0.name.caseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func makeAlbums(matching search: String) -> [AlbumGroup] {
+        let query = search.trimmingCharacters(in: .whitespaces)
+        var groups: [String: [TrackRecord]] = [:]
+        for t in tracks {
+            let k = Self.albumKey(t)
+            groups[k.artist.lowercased() + "\u{1F}" + k.album.lowercased(), default: []].append(t)
+        }
+        return groups.map { key, list -> AlbumGroup in
+            let k = Self.albumKey(list[0])
+            let sorted = list.sorted { a, b in
+                if (a.discNumber ?? 1) != (b.discNumber ?? 1) { return (a.discNumber ?? 1) < (b.discNumber ?? 1) }
+                if (a.trackNumber ?? 999) != (b.trackNumber ?? 999) { return (a.trackNumber ?? 999) < (b.trackNumber ?? 999) }
+                return a.title.caseInsensitiveCompare(b.title) == .orderedAscending
+            }
+            return AlbumGroup(id: key, title: k.album, artist: k.artist, year: sorted.compactMap(\.year).min(), tracks: sorted)
+        }
+        .filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.artist.localizedCaseInsensitiveContains(query) }
+        .sorted { a, b in
+            let artistOrder = a.artist.caseInsensitiveCompare(b.artist)
+            if artistOrder != .orderedSame { return artistOrder == .orderedAscending }
+            if a.isSingles != b.isSingles { return !a.isSingles }
+            if (a.year ?? 0) != (b.year ?? 0) { return (a.year ?? 0) < (b.year ?? 0) }
+            return a.title.caseInsensitiveCompare(b.title) == .orderedAscending
+        }
+    }
+
+    // MARK: Playlists
+
+    func playlist(id: UUID) -> PlaylistRecord? { playlists.first { $0.id == id } }
+
+    func tracks(inPlaylist id: UUID) -> [TrackRecord] {
+        guard let p = playlist(id: id) else { return [] }
+        let byID = trackByID
+        return p.trackIDs.compactMap { byID[$0] }
+    }
+
+    @discardableResult
+    func createPlaylist(name: String = "New Playlist", trackIDs: [UUID] = []) async -> PlaylistRecord {
+        let base = name.trimmingCharacters(in: .whitespaces).isEmpty ? "New Playlist" : name
+        var unique = base
+        var n = 2
+        while playlists.contains(where: { $0.name == unique }) { unique = "\(base) \(n)"; n += 1 }
+        let p = PlaylistRecord(name: unique, sortIndex: (playlists.map(\.sortIndex).max() ?? -1) + 1, trackIDs: trackIDs)
+        playlists.append(p)
+        try? await env.store.savePlaylist(p)
+        Log.info("created playlist “\(unique)”", .library)
+        return p
+    }
+
+    func renamePlaylist(_ id: UUID, to name: String) async {
+        guard let i = playlists.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        playlists[i].name = trimmed
+        try? await env.store.savePlaylist(playlists[i])
+    }
+
+    func deletePlaylist(_ id: UUID) async {
+        playlists.removeAll { $0.id == id }
+        try? await env.store.deletePlaylist(id: id)
+    }
+
+    func addTracks(_ ids: [UUID], toPlaylist playlistID: UUID) async {
+        guard let i = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
+        playlists[i].trackIDs += ids
+        try? await env.store.savePlaylist(playlists[i])
+    }
+
+    func removeFromPlaylist(_ playlistID: UUID, offsets: IndexSet) async {
+        guard let i = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
+        playlists[i].trackIDs.remove(atOffsets: offsets)
+        try? await env.store.savePlaylist(playlists[i])
+    }
+
+    func movePlaylistItems(_ playlistID: UUID, from source: IndexSet, to destination: Int) async {
+        guard let i = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
+        playlists[i].trackIDs.move(fromOffsets: source, toOffset: destination)
+        try? await env.store.savePlaylist(playlists[i])
+    }
+
+    func exportPlaylist(_ id: UUID, to url: URL) throws {
+        guard let p = playlist(id: id) else { return }
+        try PlaylistFile.export(tracks(inPlaylist: id), name: p.name, to: url)
+    }
+
+    /// Returns the number of entries that could not be matched to library tracks.
+    func importPlaylist(from url: URL) async throws -> (PlaylistRecord, unmatched: Int) {
+        let result = try PlaylistFile.importPlaylist(from: url, library: tracks)
+        let p = await createPlaylist(name: result.name, trackIDs: result.matched.map(\.id))
+        return (p, result.unmatchedPaths.count)
     }
 
     // MARK: Actions

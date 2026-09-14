@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UserNotifications
 import LocalMusicCore
 
 /// Owns the download queue. Each job runs as its own `Task` and walks the pipeline
@@ -15,6 +16,8 @@ final class DownloadManager {
     private unowned let env: AppEnvironment
     private var tasks: [UUID: Task<Void, Never>] = [:]
     private var duplicateDecisions: [UUID: CheckedContinuation<DuplicateDecision, Never>] = [:]
+    /// Jobs finished since the queue was last idle, for the completion notification.
+    private var finishedSinceIdle: (complete: Int, failed: Int) = (0, 0)
 
     init(env: AppEnvironment) {
         self.env = env
@@ -89,9 +92,33 @@ final class DownloadManager {
         tasks[id] = Task { [weak self] in
             await self?.run(id)
             await MainActor.run { [weak self] in
-                self?.tasks[id] = nil
-                self?.pump()
+                guard let self else { return }
+                self.tasks[id] = nil
+                if let job = self.jobs.first(where: { $0.id == id }) {
+                    if job.state == .complete { self.finishedSinceIdle.complete += 1 }
+                    if job.state == .failed { self.finishedSinceIdle.failed += 1 }
+                }
+                self.pump()
+                if self.unfinishedCount == 0 { self.queueBecameIdle() }
             }
+        }
+    }
+
+    /// Posts a system notification when a batch of three or more downloads has finished.
+    private func queueBecameIdle() {
+        let counts = finishedSinceIdle
+        finishedSinceIdle = (0, 0)
+        guard counts.complete + counts.failed >= 3, Bundle.main.bundleIdentifier != nil else { return }
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Downloads finished"
+            content.body = counts.failed == 0
+                ? "\(counts.complete) tracks were added to your library."
+                : "\(counts.complete) tracks added, \(counts.failed) failed."
+            content.sound = .default
+            center.add(UNNotificationRequest(identifier: "downloads-\(UUID().uuidString)", content: content, trigger: nil))
         }
     }
 
