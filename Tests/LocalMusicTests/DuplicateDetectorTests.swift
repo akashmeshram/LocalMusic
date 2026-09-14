@@ -37,3 +37,37 @@ struct DuplicateDetectorTests {
         #expect(m.first?.reasons.count == 3)
     }
 }
+
+@Suite("MetadataService")
+struct MetadataServiceTests {
+    @Test func ignoresTagsStampedByTheDownloader() {
+        var source = SourceMetadata()
+        source.title = "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film"
+        source.uploader = "Blender"
+        var embedded = AudioFileMetadata()
+        embedded.title = source.title   // what yt-dlp --embed-metadata writes
+        embedded.artist = "Blender"
+        embedded.year = 2014             // upload year
+        embedded.genre = "Film & Animation" // site category
+        let out = MetadataService().identify(source: source, embedded: embedded, fallbackTitle: source.title!, uploader: "Blender")
+        #expect(out.origin == .titleHeuristic)
+        #expect(out.tags.title == "Big Buck Bunny")
+        #expect(out.tags.year == nil && out.tags.genre == nil)
+    }
+
+    @Test func trustsRealEmbeddedTags() {
+        var source = SourceMetadata()
+        source.title = "some upload title"
+        var embedded = AudioFileMetadata()
+        embedded.title = "Jóga"; embedded.artist = "Björk"; embedded.album = "Homogenic"; embedded.year = 1997
+        let out = MetadataService().identify(source: source, embedded: embedded, fallbackTitle: "x", uploader: nil)
+        #expect(out.origin == .embeddedTags && out.tags.album == "Homogenic")
+    }
+
+    @Test func prefersStructuredSourceMetadata() {
+        var source = SourceMetadata()
+        source.title = "Artist - Track (Official Video)"; source.track = "Track"; source.artist = "Artist"; source.album = "Album"; source.releaseYear = 2020
+        let out = MetadataService().identify(source: source, embedded: AudioFileMetadata(), fallbackTitle: "x", uploader: "Artist - Topic")
+        #expect(out.origin == .sourceSite && out.tags.album == "Album" && out.tags.year == 2020)
+    }
+}

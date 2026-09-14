@@ -90,21 +90,18 @@ public enum TitleCleaner {
             title = String(title[..<m.range.lowerBound]).trimmingCharacters(in: .whitespaces)
         }
 
-        let separators = [" - ", " – ", " — ", " | ", ": ", " // "]
-        for sep in separators {
-            let parts = title.components(separatedBy: sep)
-            guard parts.count >= 2 else { continue }
-            let left = parts[0].trimmingCharacters(in: .whitespaces)
-            let right = parts.dropFirst().joined(separator: sep).trimmingCharacters(in: .whitespaces)
-            guard !left.isEmpty, !right.isEmpty, left.count <= 60 else { continue }
-            let cleanedUploader = cleanUploader(uploader)
-            if let u = cleanedUploader, similar(u, right), !similar(u, left) {
+        // "Artist - Title", also tolerating a missing space on one side ("Artist -Title", "Artist- Title").
+        if let sepRange = title.firstMatch(of: #/(\s+[-–—|]\s*|\s*[-–—|]\s+|\s+\/\/\s+|:\s+)/#)?.range {
+            let left = String(title[..<sepRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let right = String(title[sepRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+            if left.isEmpty || right.isEmpty || left.count > 60 {
+                // Not a plausible "Artist - Title" split; keep the whole title.
+            } else if let u = cleanUploader(uploader), similar(u, right), !similar(u, left) {
                 // "Title - Artist" (rare); uploader matches the right side.
                 artist = clean(right); title = clean(left)
             } else {
                 artist = clean(left); title = clean(right)
             }
-            break
         }
 
         if let m = title.firstMatch(of: #/(?:\s+|\s*[\(\[])(?:feat\.?|ft\.?|featuring)\s+([^\)\]]+)[\)\]]?\s*$/#.ignoresCase()) {

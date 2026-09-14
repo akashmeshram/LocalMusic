@@ -38,6 +38,15 @@ struct TitleCleanerTests {
         #expect(r3.artist == "Daft Punk" && r3.title == "Get Lucky")
     }
 
+    @Test func toleratesMissingSpaceAroundDash() {
+        let r = TitleCleaner.parse("Vansire -Nice To See You", uploader: "Brian Yu")
+        #expect(r.artist == "Vansire" && r.title == "Nice To See You")
+        let r2 = TitleCleaner.parse("Vansire- Nice To See You")
+        #expect(r2.artist == "Vansire" && r2.title == "Nice To See You")
+        let hyphenated = TitleCleaner.parse("Jay-Z Song")
+        #expect(hyphenated.artist == nil && hyphenated.title == "Jay-Z Song")
+    }
+
     @Test func cleansEachSideAfterSplitting() {
         let r = TitleCleaner.parse("Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film", uploader: "Blender")
         #expect(r.title == "Big Buck Bunny")

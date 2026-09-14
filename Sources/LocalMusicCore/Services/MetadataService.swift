@@ -39,8 +39,12 @@ public struct MetadataService: Sendable {
             return IdentifiedMetadata(tags: tags, origin: .sourceSite, confidence: 0.9)
         }
 
-        // 2. Tags already inside the file (Bandcamp FLACs, tagged MP3s).
-        if let title = embedded.title, let artist = embedded.artist, !Self.looksLikeUploadTitle(title) {
+        // 2. Tags already inside the file (Bandcamp FLACs, tagged MP3s). yt-dlp's own
+        //    --embed-metadata stamps the upload title and channel name, which is not real tagging.
+        let stampedByDownloader = embedded.title.map { t in
+            source.title.map { StringSimilarity.fold($0) == StringSimilarity.fold(t) } ?? false
+        } ?? false
+        if let title = embedded.title, let artist = embedded.artist, !stampedByDownloader, !Self.looksLikeUploadTitle(title) {
             let tags = TrackTags(title: TitleCleaner.clean(title), artist: artist, albumArtist: embedded.albumArtist ?? artist,
                                  album: embedded.album, trackNumber: embedded.trackNumber, trackTotal: embedded.trackTotal,
                                  discNumber: embedded.discNumber, genre: embedded.genre, year: embedded.year ?? source.releaseYear,
@@ -60,9 +64,12 @@ public struct MetadataService: Sendable {
             artist = channel
             confidence = reliableChannel ? 0.6 : 0.3
         }
-        let tags = TrackTags(title: title, artist: artist, albumArtist: artist, album: source.album ?? embedded.album,
-                             trackNumber: source.trackNumber, discNumber: source.discNumber, genre: source.genre ?? embedded.genre,
-                             year: source.releaseYear ?? parsed.year ?? embedded.year, composer: embedded.composer)
+        // Year and genre from downloader-stamped tags are the upload date and the site category, not music metadata.
+        let embeddedYear = stampedByDownloader ? nil : embedded.year
+        let embeddedGenre = stampedByDownloader ? nil : embedded.genre
+        let tags = TrackTags(title: title, artist: artist, albumArtist: artist, album: source.album ?? (stampedByDownloader ? nil : embedded.album),
+                             trackNumber: source.trackNumber, discNumber: source.discNumber, genre: source.genre ?? embeddedGenre,
+                             year: source.releaseYear ?? parsed.year ?? embeddedYear, composer: embedded.composer)
         return IdentifiedMetadata(tags: tags, origin: .titleHeuristic, confidence: confidence)
     }
 
