@@ -38,6 +38,12 @@ struct TitleCleanerTests {
         #expect(r3.artist == "Daft Punk" && r3.title == "Get Lucky")
     }
 
+    @Test func cleansEachSideAfterSplitting() {
+        let r = TitleCleaner.parse("Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film", uploader: "Blender")
+        #expect(r.title == "Big Buck Bunny")
+        #expect(r.artist == "Official Blender Foundation Short Film")
+    }
+
     @Test func extractsYearAndFeaturing() {
         let r = TitleCleaner.parse("Artist - Song feat. Guest (2019)")
         #expect(r.year == 2019 && r.title == "Song" && r.featuring == "Guest" && r.artist == "Artist")

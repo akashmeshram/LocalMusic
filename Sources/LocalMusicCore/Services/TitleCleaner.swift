@@ -100,9 +100,9 @@ public enum TitleCleaner {
             let cleanedUploader = cleanUploader(uploader)
             if let u = cleanedUploader, similar(u, right), !similar(u, left) {
                 // "Title - Artist" (rare); uploader matches the right side.
-                artist = right; title = left
+                artist = clean(right); title = clean(left)
             } else {
-                artist = left; title = right
+                artist = clean(left); title = clean(right)
             }
             break
         }
