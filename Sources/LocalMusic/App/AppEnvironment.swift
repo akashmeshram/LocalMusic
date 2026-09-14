@@ -60,7 +60,10 @@ final class AppEnvironment {
     static func live() -> AppEnvironment {
         let settings = AppSettings()
         var startupError: LocalMusicError?
-        do { try AppPaths.ensureDirectories(musicRoot: settings.musicDirectory) } catch {
+        do {
+            try AppPaths.ensureDirectories(musicRoot: settings.musicDirectory)
+            AppPaths.cleanIncoming(musicRoot: settings.musicDirectory)
+        } catch {
             startupError = LocalMusicError.wrap(error, message: "Could not create the music folder.")
         }
         let store: LibraryStore
@@ -102,6 +105,10 @@ final class AppEnvironment {
                       ffprobe: tools[.ffprobe]?.isUsable == true ? tools[.ffprobe]?.path : nil)
     }
 
+    var artworkService: ArtworkService { ArtworkService(cache: artwork) }
+    var tagWriter: TagWriterService { TagWriterService(ffmpeg: ffmpegService) }
+    let metadata = MetadataService()
+
     func makeDownloader() -> (any MediaDownloading)? {
         if useMockDownloader { return MockDownloader() }
         guard let path = tools[.ytDLP]?.path, tools[.ytDLP]?.isUsable == true else { return nil }
@@ -124,7 +131,7 @@ final class AppEnvironment {
     func checkForToolUpdates() async {
         isCheckingUpdates = true
         defer { isCheckingUpdates = false }
-        updateReport = await ToolLocator.checkForUpdates()
+        updateReport = await ToolLocator.checkForUpdates(tools: tools)
     }
 
     // MARK: Playback wiring

@@ -54,6 +54,7 @@ struct YTDLPProgressParserTests {
         #expect(YTDLPProgressParser.parse("[download] Downloading item 3 of 12") == .playlistItem(index: 3, count: 12))
         #expect(YTDLPProgressParser.parse("[download] Destination: /tmp/x.m4a") == .destination("/tmp/x.m4a"))
         #expect(YTDLPProgressParser.parse("[download] abc: has already been recorded in the archive") == .alreadyInArchive)
+        #expect(YTDLPProgressParser.parse("[ArchiveOrg] testmp3testfile: has already been recorded in the archive") == .alreadyInArchive)
     }
 
     @Test func parsesPostprocessorsErrorsWarningsAndFile() {

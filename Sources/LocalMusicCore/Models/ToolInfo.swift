@@ -54,7 +54,15 @@ public struct ToolUpdateReport: Sendable, Hashable {
         public let formula: String
         public let installed: String
         public let latest: String
+        /// Command the user can run to update (never executed by the app).
+        public let remedy: String
         public var id: String { formula }
+        public init(formula: String, installed: String, latest: String, remedy: String) {
+            self.formula = formula
+            self.installed = installed
+            self.latest = latest
+            self.remedy = remedy
+        }
     }
     public let outdated: [Item]
     public let checkedAt: Date

@@ -6,6 +6,7 @@ struct SongsView: View {
     let scope: SidebarItem
     @State private var selection = Set<TrackRecord.ID>()
     @State private var pendingDelete: [TrackRecord] = []
+    @State private var editing: TrackRecord?
 
     private var tracks: [TrackRecord] { env.library.tracks(for: scope) }
 
@@ -42,6 +43,7 @@ struct SongsView: View {
                     .disabled(env.library.isScanning)
             }
         }
+        .sheet(item: $editing) { track in MetadataEditorView(track: track) }
         .confirmationDialog("Move \(pendingDelete.count) song(s) to the Trash?", isPresented: Binding(get: { !pendingDelete.isEmpty }, set: { if !$0 { pendingDelete = [] } })) {
             Button("Move to Trash", role: .destructive) {
                 let items = pendingDelete
@@ -102,6 +104,11 @@ struct SongsView: View {
             env.playback.play(tracks, startingAt: index)
         }
         .onDeleteCommand { pendingDelete = resolve(selection) }
+        .onKeyPress("i", phases: .down) { press in
+            guard press.modifiers.contains(.command), selection.count == 1, let t = resolve(selection).first else { return .ignored }
+            editing = t
+            return .handled
+        }
     }
 
     private func resolve(_ ids: Set<TrackRecord.ID>) -> [TrackRecord] {
@@ -124,6 +131,7 @@ struct SongsView: View {
                 Task { for t in selected { await env.library.toggleFavorite(t) } }
             }
             Divider()
+            Button("Edit Metadata…") { editing = first }.disabled(selected.count != 1)
             Button("Reveal in Finder") { env.library.reveal(first) }.disabled(selected.count != 1)
             Button("Copy Source URL") { env.library.copySourceURL(first) }.disabled(selected.count != 1 || first.sourceURL == nil)
             Divider()

@@ -96,11 +96,22 @@ public struct LibraryScanner: Sendable {
         record.genre = m.genre
         record.year = m.year ?? folderAlbum.flatMap(Self.yearPrefix)
         record.composer = m.composer
+        if record.sourceURL == nil, let comment = m.comment, let url = Self.sourceURL(fromComment: comment) {
+            record.sourceURL = url
+        }
         record.duration = m.duration
         record.fileFormat = scanned.fileURL.pathExtension.lowercased()
         record.fileSize = scanned.fileSize
         if let artworkFileName { record.artworkFileName = artworkFileName }
         return record
+    }
+
+    /// yt-dlp and LocalMusic both store the page URL in the comment field.
+    static func sourceURL(fromComment comment: String) -> String? {
+        let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate = trimmed.hasPrefix("Source: ") ? String(trimmed.dropFirst(8)) : trimmed
+        guard let url = URLValidator.normalize(candidate), !candidate.contains(" ") else { return nil }
+        return url.absoluteString
     }
 
     static func yearPrefix(_ folder: String) -> Int? {

@@ -84,6 +84,10 @@ public struct DownloadJob: Identifiable, Hashable, Sendable {
     public var finishedAt: Date?
     public var resultFileURL: URL?
     public var resultTrackID: UUID?
+    /// Set while the job waits for the user to resolve a duplicate.
+    public var pendingDuplicate: DuplicateDetector.Match?
+    /// Short outcome note shown instead of the plain state label (e.g. "Skipped — duplicate").
+    public var note: String?
 
     public init(id: UUID = UUID(), sourceURL: URL, title: String, uploader: String? = nil,
                 thumbnailURL: URL? = nil, expectedDuration: TimeInterval? = nil,
@@ -106,6 +110,10 @@ public struct DownloadJob: Identifiable, Hashable, Sendable {
     }
 
     public var statusText: String {
+        if let pendingDuplicate {
+            return "Looks like a duplicate of “\(pendingDuplicate.track.title)” (\(pendingDuplicate.summary))"
+        }
+        if let note, state.isTerminal { return note }
         switch state {
         case .failed: return error?.message ?? "Failed"
         case .downloading:

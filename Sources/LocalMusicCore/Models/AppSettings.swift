@@ -14,6 +14,7 @@ public final class AppSettings {
         preferredFormat = PreferredFormat(rawValue: defaults.string(forKey: Key.preferredFormat) ?? "") ?? .original
         maxConcurrentDownloads = max(1, min(defaults.object(forKey: Key.maxConcurrent) as? Int ?? 1, 5))
         autoStartDownloads = defaults.object(forKey: Key.autoStart) as? Bool ?? true
+        duplicatePolicy = DuplicatePolicy(rawValue: defaults.string(forKey: Key.duplicatePolicy) ?? "") ?? .ask
         autoQueryMusicBrainz = defaults.object(forKey: Key.autoQueryMB) as? Bool ?? true
         minimumAutoMatchConfidence = defaults.object(forKey: Key.minConfidence) as? Double ?? 0.85
         preferEarliestRelease = defaults.object(forKey: Key.preferEarliest) as? Bool ?? true
@@ -37,6 +38,7 @@ public final class AppSettings {
     public var preferredFormat: PreferredFormat { didSet { defaults.set(preferredFormat.rawValue, forKey: Key.preferredFormat) } }
     public var maxConcurrentDownloads: Int { didSet { defaults.set(maxConcurrentDownloads, forKey: Key.maxConcurrent) } }
     public var autoStartDownloads: Bool { didSet { defaults.set(autoStartDownloads, forKey: Key.autoStart) } }
+    public var duplicatePolicy: DuplicatePolicy { didSet { defaults.set(duplicatePolicy.rawValue, forKey: Key.duplicatePolicy) } }
 
     // MARK: Metadata
     public var autoQueryMusicBrainz: Bool { didSet { defaults.set(autoQueryMusicBrainz, forKey: Key.autoQueryMB) } }
@@ -77,6 +79,7 @@ public final class AppSettings {
         static let preferredFormat = "downloads.preferredFormat"
         static let maxConcurrent = "downloads.maxConcurrent"
         static let autoStart = "downloads.autoStart"
+        static let duplicatePolicy = "downloads.duplicatePolicy"
         static let autoQueryMB = "metadata.autoQueryMusicBrainz"
         static let minConfidence = "metadata.minimumAutoMatchConfidence"
         static let preferEarliest = "metadata.preferEarliestRelease"
@@ -91,4 +94,22 @@ public final class AppSettings {
         static let ffprobePath = "advanced.ffprobePath"
         static let fpcalcPath = "advanced.fpcalcPath"
     }
+}
+
+/// What to do when a download matches a track already in the library.
+public enum DuplicatePolicy: String, CaseIterable, Sendable, Codable, Identifiable {
+    case ask, skip, keepBoth, replace
+    public var id: String { rawValue }
+    public var label: String {
+        switch self {
+        case .ask: "Ask every time"
+        case .skip: "Skip the download"
+        case .keepBoth: "Keep both"
+        case .replace: "Replace the existing track"
+        }
+    }
+}
+
+public enum DuplicateDecision: Sendable {
+    case skip, keepBoth, replace
 }

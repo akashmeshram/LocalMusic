@@ -13,7 +13,7 @@ struct YTDLPServiceTests {
         #expect(args.contains("--no-playlist"))
         #expect(args.contains("--embed-thumbnail"))
         #expect(args.contains("--ffmpeg-location"))
-        #expect(args.contains("--download-archive"))
+        #expect(!args.contains("--download-archive"))
         #expect(!args.contains(where: { $0.contains("$") || $0.contains("|") && !$0.hasPrefix("download:") && !$0.hasPrefix("postprocess:") && !$0.hasPrefix("after_move:") }))
     }
 

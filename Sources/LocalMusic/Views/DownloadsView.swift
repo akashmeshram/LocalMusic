@@ -101,6 +101,7 @@ struct DownloadRow: View {
     @Environment(AppEnvironment.self) private var env
     let job: DownloadJob
     @State private var showDetails = false
+    @State private var editingTrack: TrackRecord?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -119,7 +120,17 @@ struct DownloadRow: View {
                         if let pt = job.playlistTitle { Text("· \(pt)").lineLimit(1) }
                     }
                     .font(.caption).foregroundStyle(.secondary)
-                    Text(job.statusText).font(.caption).foregroundStyle(job.state == .failed ? .red : .secondary).lineLimit(1)
+                    Text(job.statusText).font(.caption).foregroundStyle(job.state == .failed ? .red : (job.pendingDuplicate != nil ? .orange : .secondary)).lineLimit(2)
+                    if let dup = job.pendingDuplicate {
+                        HStack(spacing: 8) {
+                            Button("Skip") { env.downloads.resolveDuplicate(job.id, .skip) }
+                            Button("Keep Both") { env.downloads.resolveDuplicate(job.id, .keepBoth) }
+                            Button("Replace Existing") { env.downloads.resolveDuplicate(job.id, .replace) }
+                            Button("Show Existing") { env.library.reveal(dup.track) }
+                        }
+                        .controlSize(.small)
+                        .padding(.top, 2)
+                    }
                     if job.state == .downloading || job.state == .processing || job.state == .identifying || job.state == .organizing {
                         ProgressView(value: job.state == .downloading ? job.progress?.fraction : nil)
                             .progressViewStyle(.linear)
@@ -146,6 +157,7 @@ struct DownloadRow: View {
             }
         }
         .padding(.vertical, 4)
+        .sheet(item: $editingTrack) { MetadataEditorView(track: $0) }
         .contextMenu {
             if job.state.isTerminal {
                 if job.state != .complete { Button("Retry") { env.downloads.retry(job.id) } }
@@ -155,7 +167,10 @@ struct DownloadRow: View {
             }
             Divider()
             if let file = job.resultFileURL { Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) } }
-            if let id = job.resultTrackID, let track = env.library.trackByID[id] { Button("Play") { env.playback.play(track) } }
+            if let id = job.resultTrackID, let track = env.library.trackByID[id] {
+                Button("Play") { env.playback.play(track) }
+                Button("Edit Metadata…") { editingTrack = track }
+            }
             Button("Copy Source URL") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(job.sourceURL.absoluteString, forType: .string)
@@ -241,7 +256,7 @@ struct DependencyBanner: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(.primary)
-        .background(Color.orange.opacity(0.18))
+        .background(Color.orange.opacity(0.18).background(Color(nsColor: .windowBackgroundColor)))
         .overlay(alignment: .bottom) { Divider() }
     }
 

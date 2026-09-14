@@ -63,6 +63,7 @@ public struct DownloadRequest: Sendable {
     public let destinationDirectory: URL
     public let format: PreferredFormat
     public let ffmpegDirectory: URL?
+    /// Archive file the app appends to after a successful download (yt-dlp format: "extractor id").
     public let archiveFile: URL?
     public let embedMetadata: Bool
     public let embedThumbnail: Bool

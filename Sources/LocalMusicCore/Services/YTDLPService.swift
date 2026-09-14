@@ -185,9 +185,8 @@ public struct YTDLPService: MediaDownloading {
             if request.embedMetadata { args.append("--embed-metadata") }
             if request.embedThumbnail { args.append("--embed-thumbnail") }
         }
-        if let archive = request.archiveFile {
-            args += ["--download-archive", archive.path]
-        }
+        // The library index is the archive of truth (see DownloadManager); yt-dlp's own archive would
+        // block deliberate re-downloads after a "Replace" decision or a deletion.
         args += ["--", request.url.absoluteString]
         return args
     }

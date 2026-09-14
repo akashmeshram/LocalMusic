@@ -41,6 +41,9 @@ public enum YTDLPErrorClassifier {
         if text.contains("ffprobe and ffmpeg not found") || text.contains("ffmpeg not found") || text.contains("postprocessing: ffmpeg") && text.contains("not found") {
             return make(.toolMissing, "ffmpeg is required for this step but was not found. Install it with: brew install ffmpeg")
         }
+        if text.contains("http error 403") {
+            return make(.network, "The site refused to serve the media (HTTP 403). This almost always means yt-dlp is out of date — update it (Settings → Advanced → Check for Tool Updates) and try again.")
+        }
         if text.contains("unable to download webpage") || text.contains("network is unreachable") || text.contains("name resolution")
             || text.contains("timed out") || text.contains("connection reset") || text.contains("connection refused")
             || text.contains("http error 5") || text.contains("http error 429") || text.contains("urlopen error")

@@ -134,6 +134,38 @@ final class LibraryViewModel {
         NSPasteboard.general.setString(url, forType: .string)
     }
 
+    /// Writes edited tags into the file, moves it if its organized path changed, and updates the index.
+    func save(tags: TrackTags, for track: TrackRecord) async throws {
+        let normalized = tags.normalized
+        guard PathGuard(root: env.settings.musicDirectory).contains(track.fileURL) else {
+            throw LocalMusicError(kind: .pathEscapesLibrary, message: "This file is outside the music folder.")
+        }
+        let wasPlaying = env.playback.currentTrack?.id == track.id
+        if wasPlaying { env.playback.stop() }
+        try await env.tagWriter.write(normalized, to: track.fileURL)
+
+        var record = track
+        normalized.apply(to: &record)
+        switch normalized.artwork {
+        case .replace(let data): record.artworkFileName = try? env.artwork.store(data)
+        case .remove: record.artworkFileName = nil
+        case .keep: break
+        }
+        if env.settings.autoOrganize {
+            let organizer = FileOrganizer(root: env.settings.musicDirectory, folderTemplate: env.settings.folderTemplate, filenameTemplate: env.settings.filenameTemplate)
+            let target = organizer.destinationURL(for: normalized.organizeMetadata, fileExtension: track.fileURL.pathExtension)
+            if target.standardizedFileURL != track.fileURL.standardizedFileURL {
+                let source = track.fileURL
+                let moved = try await Task.detached { try organizer.move(source, to: target) }.value
+                organizer.pruneEmptyDirectories(from: source)
+                record.fileURL = moved
+            }
+        }
+        record.fileSize = (try? record.fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? record.fileSize
+        await upsert(record)
+        Log.info("saved tags for \(record.title)", .metadata)
+    }
+
     /// Moves files to the Trash (never a hard delete) and removes the index rows.
     func delete(_ selected: [TrackRecord]) async {
         let root = env.settings.musicDirectory

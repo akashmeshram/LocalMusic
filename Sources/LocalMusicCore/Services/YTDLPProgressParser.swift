@@ -50,12 +50,12 @@ public enum YTDLPProgressParser {
         if line.hasPrefix("WARNING:") {
             return .warning(line.dropFirst("WARNING:".count).trimmingCharacters(in: .whitespaces))
         }
+        if line.contains("has already been recorded in the archive") { return .alreadyInArchive }
         if line.hasPrefix("[download]") {
             let body = line.dropFirst("[download]".count).trimmingCharacters(in: .whitespaces)
             if body.hasPrefix("Destination:") {
                 return .destination(body.dropFirst("Destination:".count).trimmingCharacters(in: .whitespaces))
             }
-            if body.contains("has already been recorded in the archive") { return .alreadyInArchive }
             if let item = parsePlaylistItem(body) { return .playlistItem(index: item.0, count: item.1) }
             if let progress = parseLegacyProgress(body) { return .progress(progress) }
             return .other(line)

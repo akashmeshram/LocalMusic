@@ -90,32 +90,72 @@ public enum ToolLocator {
         return nil
     }
 
-    /// Asks Homebrew which of the tool formulas are outdated. Read-only; never upgrades.
-    public static func checkForUpdates(tools: [Tool] = [.ytDLP, .ffmpeg]) async -> ToolUpdateReport {
-        guard let brew = locateHomebrew() else {
-            return ToolUpdateReport(outdated: [], message: "Homebrew was not found. Check for updates manually.")
-        }
-        let formulas = Array(Set(tools.map(\.homebrewFormula))).sorted()
-        do {
-            let output = try await ProcessRunner.run(brew, arguments: ["outdated", "--json=v2", "--formula"] + formulas)
-            guard let data = output.stdout.data(using: .utf8),
-                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let list = json["formulae"] as? [[String: Any]]
-            else {
-                let detail = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-                return ToolUpdateReport(outdated: [], message: detail.isEmpty ? "Could not read Homebrew's response." : detail)
+    /// True when the executable lives inside a Homebrew prefix.
+    public static func isHomebrewManaged(_ path: URL?) -> Bool {
+        guard let p = path?.resolvingSymlinksInPath().path else { return false }
+        return p.hasPrefix("/opt/homebrew/") || p.hasPrefix("/usr/local/Cellar/") || p.hasPrefix("/usr/local/Homebrew/")
+    }
+
+    /// Reports outdated tools. Homebrew installs are checked with `brew outdated`; a standalone
+    /// yt-dlp release is compared against the latest GitHub release tag. Read-only; never upgrades.
+    public static func checkForUpdates(tools: [Tool: ToolInfo]) async -> ToolUpdateReport {
+        var items: [ToolUpdateReport.Item] = []
+        var messages: [String] = []
+
+        let brewTools = tools.values.filter { $0.isUsable && isHomebrewManaged($0.path) }
+        let formulas = Array(Set(brewTools.map(\.tool.homebrewFormula))).sorted()
+        if !formulas.isEmpty {
+            if let brew = locateHomebrew() {
+                do {
+                    let output = try await ProcessRunner.run(brew, arguments: ["outdated", "--json=v2", "--formula"] + formulas)
+                    if let data = output.stdout.data(using: .utf8),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let list = json["formulae"] as? [[String: Any]] {
+                        for entry in list {
+                            guard let name = entry["name"] as? String,
+                                  let installed = (entry["installed_versions"] as? [String])?.last,
+                                  let latest = entry["current_version"] as? String else { continue }
+                            items.append(.init(formula: name, installed: installed, latest: latest, remedy: "brew upgrade \(name)"))
+                        }
+                    } else {
+                        let detail = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                        messages.append(detail.isEmpty ? "Could not read Homebrew's response." : detail)
+                    }
+                } catch {
+                    messages.append(error.localizedDescription)
+                }
+            } else {
+                messages.append("Homebrew was not found.")
             }
-            let items = list.compactMap { entry -> ToolUpdateReport.Item? in
-                guard let name = entry["name"] as? String,
-                      let installed = (entry["installed_versions"] as? [String])?.last,
-                      let latest = entry["current_version"] as? String else { return nil }
-                return ToolUpdateReport.Item(formula: name, installed: installed, latest: latest)
-            }
-            let notBrew = formulas.filter { f in output.stderr.contains(f) && output.stderr.lowercased().contains("no available formula") }
-            let message = notBrew.isEmpty ? nil : "Not managed by Homebrew: \(notBrew.joined(separator: ", "))"
-            return ToolUpdateReport(outdated: items, message: message)
-        } catch {
-            return ToolUpdateReport(outdated: [], message: error.localizedDescription)
         }
+
+        if let ytdlp = tools[.ytDLP], ytdlp.isUsable, !isHomebrewManaged(ytdlp.path), let installed = ytdlp.version {
+            if let latest = await latestYTDLPRelease() {
+                if latest != installed, latest > installed {
+                    let writable = ytdlp.path.map { FileManager.default.isWritableFile(atPath: $0.path) } ?? false
+                    let remedy = writable ? "yt-dlp -U" : "sudo yt-dlp -U   (or: brew install yt-dlp)"
+                    items.append(.init(formula: "yt-dlp", installed: installed, latest: latest, remedy: remedy))
+                }
+            } else {
+                messages.append("Could not reach GitHub to check the standalone yt-dlp release.")
+            }
+        }
+        for info in tools.values where !info.isUsable && info.tool.isRequired {
+            messages.append("\(info.tool.rawValue) is missing or broken — brew install \(info.tool.homebrewFormula)")
+        }
+        return ToolUpdateReport(outdated: items, message: messages.isEmpty ? nil : messages.joined(separator: "\n"))
+    }
+
+    /// Latest yt-dlp version from the GitHub release redirect (no API rate limit involved).
+    static func latestYTDLPRelease() async -> String? {
+        guard let url = URL(string: "https://github.com/yt-dlp/yt-dlp/releases/latest") else { return nil }
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.httpMethod = "HEAD"
+        request.setValue("LocalMusic/0.1 (update check)", forHTTPHeaderField: "User-Agent")
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let final = response.url?.absoluteString,
+              let range = final.range(of: "/releases/tag/") else { return nil }
+        let tag = String(final[range.upperBound...])
+        return tag.range(of: #"^\d{4}\.\d{2}\.\d{2}"#, options: .regularExpression) != nil ? tag : nil
     }
 }

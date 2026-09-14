@@ -33,6 +33,9 @@ struct DownloadSettingsView: View {
                 .font(.caption).foregroundStyle(.secondary)
             Stepper("Simultaneous downloads: \(settings.maxConcurrentDownloads)", value: $settings.maxConcurrentDownloads, in: 1...5)
             Toggle("Start queued downloads automatically", isOn: $settings.autoStartDownloads)
+            Picker("When a download looks like a duplicate", selection: $settings.duplicatePolicy) {
+                ForEach(DuplicatePolicy.allCases) { Text($0.label).tag($0) }
+            }
         }
         .formStyle(.grouped)
         .padding()
@@ -118,10 +121,10 @@ struct AdvancedSettingsView: View {
                 }
                 if let report = env.updateReport {
                     if report.outdated.isEmpty, report.message == nil {
-                        Label("yt-dlp and ffmpeg are up to date (Homebrew).", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
+                        Label("yt-dlp and ffmpeg are up to date.", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
                     }
                     ForEach(report.outdated) { item in
-                        Label("\(item.formula): \(item.installed) → \(item.latest). Run: brew upgrade \(item.formula)", systemImage: "arrow.up.circle")
+                        Label("\(item.formula) \(item.installed) → \(item.latest). Update with: \(item.remedy)", systemImage: "arrow.up.circle")
                             .font(.caption).textSelection(.enabled)
                     }
                     if let message = report.message { Text(message).font(.caption).foregroundStyle(.secondary) }

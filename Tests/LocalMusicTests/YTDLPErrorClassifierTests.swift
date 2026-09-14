@@ -21,6 +21,11 @@ struct YTDLPErrorClassifierTests {
         #expect(kind("ERROR: [youtube] abc: Sign in to confirm you’re not a bot") == .loginRequired)
     }
 
+    @Test func explains403AsOutdatedTool() {
+        let err = YTDLPErrorClassifier.classify(output: "ERROR: unable to download video data: HTTP Error 403: Forbidden", exitCode: 1)
+        #expect(err.kind == .network && err.message.contains("out of date"))
+    }
+
     @Test func keepsTechnicalDetailsWithoutProgressNoise() {
         let out = "LMPROG|downloading|1|2|NA|NA|NA|NA|NA\n[youtube] x\nERROR: Video unavailable"
         let err = YTDLPErrorClassifier.classify(output: out, exitCode: 1)

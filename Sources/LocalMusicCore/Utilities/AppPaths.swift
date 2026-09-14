@@ -29,6 +29,30 @@ public enum AppPaths {
         }
     }
 
+    /// Removes leftovers of jobs that did not finish (the app was quit or crashed mid-download).
+    public static func cleanIncoming(musicRoot: URL) {
+        let dir = incomingDirectory(musicRoot: musicRoot)
+        guard let items = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+        for item in items {
+            try? FileManager.default.removeItem(at: item)
+        }
+        if !items.isEmpty { Log.info("removed \(items.count) stale incoming item(s)", .download) }
+    }
+
+    /// Appends a yt-dlp compatible archive line ("extractor id") so other tools can also skip it.
+    public static func appendToDownloadArchive(extractor: String?, id: String?) {
+        guard let extractor, let id, !id.isEmpty else { return }
+        let line = "\(extractor.lowercased()) \(id)\n"
+        let url = downloadArchiveURL
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(line.utf8))
+        } else {
+            try? line.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
     /// Free space on the volume containing `url`, in bytes, or nil when it cannot be determined.
     public static func availableCapacity(at url: URL) -> Int64? {
         let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
