@@ -19,7 +19,8 @@ struct ToolLocatorTests {
 
     @Test func searchesHomebrewPathsFirst() {
         let dirs = ToolLocator.searchDirectories.map(\.path)
-        #expect(dirs.first == "/opt/homebrew/bin")
+        #expect(dirs.first == ToolInstaller.binDirectory.path)
+        #expect(dirs[1] == "/opt/homebrew/bin")
         #expect(dirs.contains("/usr/local/bin"))
     }
 }

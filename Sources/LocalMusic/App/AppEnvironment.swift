@@ -63,6 +63,8 @@ final class AppEnvironment {
     var updateReport: ToolUpdateReport?
     var isCheckingUpdates = false
     var startupError: LocalMusicError?
+    var ytdlpInstallStage: ToolInstaller.Stage?
+    var ytdlpInstallError: LocalMusicError?
     var selectedSidebar: SidebarItem? = .songs
     var focusURLFieldToken = 0
 
@@ -83,6 +85,8 @@ final class AppEnvironment {
     static func live() -> AppEnvironment {
         let settings = AppSettings()
         var startupError: LocalMusicError?
+    var ytdlpInstallStage: ToolInstaller.Stage?
+    var ytdlpInstallError: LocalMusicError?
         do {
             try AppPaths.ensureDirectories(musicRoot: settings.musicDirectory)
             AppPaths.cleanIncoming(musicRoot: settings.musicDirectory)
@@ -160,6 +164,29 @@ final class AppEnvironment {
             }
         }
     }
+
+    /// Downloads the official yt-dlp build into Application Support (user-initiated only).
+    func installYTDLP() async {
+        guard ytdlpInstallStage == nil else { return }
+        ytdlpInstallStage = .fetchingChecksum
+        ytdlpInstallError = nil
+        do {
+            _ = try await ToolInstaller().installYTDLP { stage in
+                Task { @MainActor [weak self] in self?.ytdlpInstallStage = stage }
+            }
+            if settings.ytdlpPath.isEmpty || settings.ytdlpPath == ToolInstaller.ytdlpURL.path {
+                settings.ytdlpPath = ToolInstaller.ytdlpURL.path
+            }
+            await refreshTools()
+            updateReport = nil
+        } catch {
+            ytdlpInstallError = LocalMusicError.wrap(error)
+            Log.error("yt-dlp install failed: \(ytdlpInstallError!.message)", .tools)
+        }
+        ytdlpInstallStage = nil
+    }
+
+    var ytdlpIsAppManaged: Bool { ToolInstaller.isAppManaged(tools[.ytDLP]?.path) }
 
     func checkForToolUpdates() async {
         isCheckingUpdates = true

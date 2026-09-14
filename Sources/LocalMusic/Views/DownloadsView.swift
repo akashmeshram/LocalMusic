@@ -237,6 +237,7 @@ struct StateBadge: View {
 
 struct DependencyBanner: View {
     @Environment(AppEnvironment.self) private var env
+    @State private var confirmInstall = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -254,12 +255,17 @@ struct DependencyBanner: View {
                     }
                 }
             }
-            HStack {
+            HStack(spacing: 10) {
                 Text("Install or repair with:").font(.caption)
                 Text("brew install yt-dlp ffmpeg").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString("brew install yt-dlp ffmpeg", forType: .string) }.controlSize(.small)
                 Spacer()
+                if env.tools[.ytDLP]?.isUsable != true {
+                    YTDLPInstallButton(confirm: $confirmInstall)
+                }
                 Button("Re-check") { Task { await env.refreshTools() } }.controlSize(.small)
             }
+            if let error = env.ytdlpInstallError { Text(error.message).font(.caption).foregroundStyle(.red) }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -338,5 +344,50 @@ struct PlaylistPreviewSheet: View {
         }
         .frame(width: 560, height: 520)
         .onAppear { selected = Set(playlist.entries.map(\.id)) }
+    }
+}
+
+
+/// "Download yt-dlp" with an explicit confirmation; shows progress while installing.
+struct YTDLPInstallButton: View {
+    @Environment(AppEnvironment.self) private var env
+    @Binding var confirm: Bool
+    var title: String = "Download yt-dlp…"
+
+    var body: some View {
+        Group {
+            if let stage = env.ytdlpInstallStage {
+                HStack(spacing: 6) {
+                    ProgressView(value: progressValue(stage)).progressViewStyle(.linear).frame(width: 90).controlSize(.small)
+                    Text(label(stage)).font(.caption).foregroundStyle(.secondary)
+                }
+            } else {
+                Button(title) { confirm = true }.controlSize(.small)
+            }
+        }
+        .confirmationDialog("Download the official yt-dlp build?", isPresented: $confirm) {
+            Button("Download (\(ToolInstaller.approximateSize))") { Task { await env.installYTDLP() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("LocalMusic will fetch yt-dlp_macos from github.com/yt-dlp, verify its published SHA-256 checksum, and keep it in ~/Library/Application Support/LocalMusic/bin. Nothing else on your system is touched. ffmpeg still needs Homebrew.")
+        }
+    }
+
+    private func progressValue(_ stage: ToolInstaller.Stage) -> Double? {
+        switch stage {
+        case .fetchingChecksum: 0
+        case .downloading(let f): f
+        case .verifying: 0.95
+        case .done: 1
+        }
+    }
+
+    private func label(_ stage: ToolInstaller.Stage) -> String {
+        switch stage {
+        case .fetchingChecksum: "Checking release…"
+        case .downloading(let f): f.map { String(format: "Downloading %.0f%%", $0 * 100) } ?? "Downloading…"
+        case .verifying: "Verifying…"
+        case .done: "Installed"
+        }
     }
 }

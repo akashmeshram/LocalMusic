@@ -146,6 +146,8 @@ struct AdvancedSettingsView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var confirmRebuild = false
     @State private var cacheCleared = false
+    @State private var confirmInstall = false
+    @State private var confirmRemove = false
 
     var body: some View {
         @Bindable var settings = env.settings
@@ -162,6 +164,15 @@ struct AdvancedSettingsView: View {
                     Button("Check for Tool Updates") { Task { await env.checkForToolUpdates() } }.disabled(env.isCheckingUpdates)
                     if env.isCheckingUpdates { ProgressView().controlSize(.small) }
                 }
+                HStack {
+                    YTDLPInstallButton(confirm: $confirmInstall, title: env.ytdlpIsAppManaged ? "Update yt-dlp…" : (ToolInstaller.isInstalled ? "Re-download yt-dlp…" : "Download yt-dlp (no Homebrew needed)…"))
+                    if ToolInstaller.isInstalled {
+                        Button("Remove app-managed yt-dlp") { confirmRemove = true }.controlSize(.small)
+                    }
+                }
+                if let error = env.ytdlpInstallError { Text(error.message).font(.caption).foregroundStyle(.red) }
+                Text("The app can fetch the official standalone yt-dlp build into its own Application Support folder (checksum-verified). ffmpeg and ffprobe must come from Homebrew: brew install ffmpeg")
+                    .font(.caption).foregroundStyle(.secondary)
                 if let report = env.updateReport {
                     if report.outdated.isEmpty, report.message == nil {
                         Label("yt-dlp and ffmpeg are up to date.", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
@@ -189,6 +200,13 @@ struct AdvancedSettingsView: View {
         .padding()
         .confirmationDialog("Rebuild the library index?", isPresented: $confirmRebuild) {
             Button("Rebuild") { Task { await env.library.rebuild() } }
+        }
+        .confirmationDialog("Remove the yt-dlp that LocalMusic downloaded?", isPresented: $confirmRemove) {
+            Button("Remove", role: .destructive) {
+                try? ToolInstaller().removeYTDLP()
+                if settings.ytdlpPath == ToolInstaller.ytdlpURL.path { settings.ytdlpPath = "" }
+                Task { await env.refreshTools() }
+            }
         }
     }
 }

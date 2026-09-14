@@ -8,6 +8,7 @@ public enum ToolLocator {
     public static var searchDirectories: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         var dirs = [
+            ToolInstaller.binDirectory.path,
             "/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin",
             home.appendingPathComponent(".local/bin").path,
             home.appendingPathComponent("Library/Python/3.12/bin").path,
@@ -132,8 +133,13 @@ public enum ToolLocator {
         if let ytdlp = tools[.ytDLP], ytdlp.isUsable, !isHomebrewManaged(ytdlp.path), let installed = ytdlp.version {
             if let latest = await latestYTDLPRelease() {
                 if latest != installed, latest > installed {
-                    let writable = ytdlp.path.map { FileManager.default.isWritableFile(atPath: $0.path) } ?? false
-                    let remedy = writable ? "yt-dlp -U" : "sudo yt-dlp -U   (or: brew install yt-dlp)"
+                    let remedy: String
+                    if ToolInstaller.isAppManaged(ytdlp.path) {
+                        remedy = "Update yt-dlp in Settings → Advanced"
+                    } else {
+                        let writable = ytdlp.path.map { FileManager.default.isWritableFile(atPath: $0.path) } ?? false
+                        remedy = writable ? "yt-dlp -U" : "sudo yt-dlp -U   (or: brew install yt-dlp)"
+                    }
                     items.append(.init(formula: "yt-dlp", installed: installed, latest: latest, remedy: remedy))
                 }
             } else {

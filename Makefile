@@ -1,6 +1,8 @@
-.PHONY: build release run test clean xcodeproj
+.PHONY: build release dist run test clean xcodeproj
 build:
 	@Scripts/build.sh debug
+dist:
+	@Scripts/dist.sh
 release:
 	@Scripts/build.sh release
 run: build

@@ -34,9 +34,17 @@ you add an AcoustID API key in **Settings → Metadata**):
 brew install chromaprint
 ```
 
-The app looks for tools in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin`, `~/.local/bin`,
-and everything on your `PATH`. Paths can be overridden in **Settings → Advanced**. The app never
-installs or upgrades anything itself; **Check for Tool Updates** only asks Homebrew what is outdated.
+The app looks for tools in its own `~/Library/Application Support/LocalMusic/bin`, then
+`/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin`, `~/.local/bin`, and everything on your
+`PATH`. Paths can be overridden in **Settings → Advanced**.
+
+**No Homebrew for yt-dlp?** The app can fetch the official standalone `yt-dlp_macos` build itself
+(**Download yt-dlp…** in the tools banner or Settings → Advanced). It asks first, verifies the
+release's published SHA-256 checksum, stores the binary in its own Application Support folder, and
+can remove it again. ffmpeg is not bundled: `brew install ffmpeg` remains the one manual step.
+Nothing else on the system is ever installed or modified. **Check for Tool Updates** compares
+against Homebrew or the latest GitHub release and tells you what to run (or offers the in-app update
+for the app-managed yt-dlp).
 
 ## Building
 
@@ -66,6 +74,23 @@ compiler (a real situation on the machine this was first built on).
 Useful launch flags for development: `--mock` uses a simulated downloader that produces playable
 WAV tones so the UI can be exercised offline; `--download=<url>` queues a URL at launch;
 `--screenshot=<dir>` writes PNGs of the window a few seconds after launch.
+
+## Distributing the app
+
+```sh
+make dist   # → build/dist/LocalMusic-<version>.zip, universal (Apple Silicon + Intel), optimized
+```
+
+By default the bundle is ad-hoc signed, so recipients must right-click → **Open** the first time.
+For a clean Gatekeeper experience sign with a Developer ID and notarize:
+
+```sh
+CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=localmusic make dist
+# one-time: xcrun notarytool store-credentials localmusic --apple-id you@example.com --team-id TEAMID
+```
+
+The app has no bundled frameworks or third-party code and weighs a few megabytes; the only runtime
+dependencies are yt-dlp (which it can fetch for the user) and ffmpeg.
 
 ## How the yt-dlp integration works
 
