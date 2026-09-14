@@ -8,6 +8,8 @@
 	<string>LocalMusic</string>
 	<key>CFBundleExecutable</key>
 	<string>LocalMusic</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>dev.localmusic.app</string>
 	<key>CFBundleInfoDictionaryVersion</key>

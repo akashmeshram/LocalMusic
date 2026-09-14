@@ -32,6 +32,8 @@ targets:
         embed: true
     info:
       path: Sources/LocalMusic/Resources/Info.plist
+      properties:
+        CFBundleIconFile: AppIcon
     entitlements:
       path: Sources/LocalMusic/Resources/LocalMusic.entitlements
     settings:
