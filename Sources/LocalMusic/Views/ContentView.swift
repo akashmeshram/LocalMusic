@@ -22,7 +22,7 @@ struct ContentView: View {
             await env.library.rescan()
             if let sel = LaunchOptions.initialSelection {
                 switch sel {
-                case "albums": env.selectedSidebar = .albums
+                case "albums", "album": env.selectedSidebar = .albums
                 case "artists": env.selectedSidebar = .artists
                 case "recent": env.selectedSidebar = .recentlyAdded
                 case "favorites": env.selectedSidebar = .favorites

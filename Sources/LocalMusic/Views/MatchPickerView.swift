@@ -83,6 +83,7 @@ struct MatchPickerView: View {
             .padding()
         }
         .frame(width: 640, height: 460)
+        .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             candidates = initialCandidates
             selected = candidates.first?.id

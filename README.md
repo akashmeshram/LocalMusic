@@ -1,241 +1,164 @@
-# LocalMusic
+<p align="center">
+  <img src="docs/screenshots/icon.png" width="128" alt="LocalMusic icon">
+</p>
+<h1 align="center">LocalMusic</h1>
+<p align="center">
+  Paste a link, get a properly tagged song in a tidy folder, play it offline.<br>
+  A native macOS app for building a local music library from media you're allowed to download.
+</p>
+<p align="center">
+  <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-black?logo=apple">
+  <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
+  <img alt="SwiftUI" src="https://img.shields.io/badge/UI-SwiftUI-0A84FF">
+  <img alt="No accounts, no telemetry" src="https://img.shields.io/badge/privacy-local%20only-2ea44f">
+</p>
 
-A native macOS app (Swift 6, SwiftUI) that downloads audio from URLs you have permission to
-download, identifies and tags it, files it into a clean folder structure under `~/Music/LocalMusic`,
-and plays it back offline. No accounts, no analytics, no cloud.
+<p align="center">
+  <img src="docs/screenshots/songs.png" width="880" alt="Songs view">
+</p>
 
-**Status:** all four phases of the specification are implemented: downloads with live progress and
-a queue, automatic filing, a rebuildable library index, playback with media keys and an Up Next
-queue, Finder integration, title cleanup, native tag writing (M4A/MP3/FLAC) with artwork, a
-metadata editor, duplicate handling, MusicBrainz identification with confidence gating and a manual
-match picker, Cover Art Archive artwork, optional AcoustID fingerprinting, Songs/Albums/Artists/
-Recently Added/Favorites views, playlists with drag-and-drop and M3U8 import/export, search, and
-system notifications when a batch of downloads finishes.
+## What it does
+
+```
+URL ─▶ yt-dlp ─▶ .incoming/ ─▶ identify (tags · MusicBrainz) ─▶ artwork ─▶ Artist/Year - Album/NN - Title.m4a ─▶ library
+```
+
+- **Download** single videos or whole playlists (with a preview where you can untick items). Live progress, speed, ETA, a queue with configurable concurrency, cancel and retry. Keeps the original AAC stream whenever it can; only Opus/WebM is converted, because macOS can't play it.
+- **Identify** the actual recording instead of trusting the upload title: noise like *Official Video / Lyrics / 4K / Remastered* is stripped, `Artist - Title` is split, then MusicBrainz is asked and candidates are scored on title, artist, duration and release. Only confident matches are applied automatically; the rest are offered in a picker.
+- **Tag** the file itself (M4A, MP3, FLAC natively; others through ffmpeg) with title, artist, album, track/disc numbers, year, genre, composer, MusicBrainz IDs and artwork from the Cover Art Archive, the embedded art, or the video thumbnail. Audio bytes are never re-encoded when tagging.
+- **Organize** into `~/Music/LocalMusic/{Album Artist}/{Year} - {Album}/{NN} - {Title}.ext`, singles into `Artist/Singles/`, unidentified tracks into `Unknown Artist/Unknown Album/`. Sanitized names, case-insensitive collision handling, nothing ever escapes the library folder, nothing is ever overwritten without asking.
+- **Detect duplicates** by source URL, MusicBrainz recording, artist + normalized title and duration, and let you choose Skip / Keep both / Replace / Show existing.
+- **Browse and play**: Songs table, Albums grid, Artists, Recently Added, Favorites, playlists with drag-and-drop and M3U8 import/export, an Up Next queue, shuffle, repeat, media keys and the system Now Playing widget. Everything works offline.
+- **Stay honest**: files are the source of truth, the index is rebuildable, logs are local, there are no accounts, no analytics and no cloud.
+
+## Screenshots
+
+| Downloads queue | Albums |
+|---|---|
+| ![Downloads](docs/screenshots/downloads.png) | ![Albums](docs/screenshots/albums.png) |
+
+| Artists | Playlist |
+|---|---|
+| ![Artists](docs/screenshots/artists.png) | ![Playlist](docs/screenshots/playlist.png) |
+
+| Playlist preview before downloading | Album detail |
+|---|---|
+| ![Playlist preview](docs/screenshots/playlist-preview.png) | ![Album detail](docs/screenshots/album-detail.png) |
+
+## Quick start
+
+1. **Get the app.** Either download `LocalMusic-<version>.zip` from Releases, or build it yourself (see below). The first launch of an unsigned build needs right-click → **Open**.
+2. **Install ffmpeg** (one line, needed for conversion and thumbnail embedding):
+   ```sh
+   brew install ffmpeg
+   ```
+3. **Get yt-dlp.** Either `brew install yt-dlp`, or click **Download yt-dlp…** inside the app: it fetches the official standalone build from GitHub, verifies its published SHA-256, and keeps it in the app's own support folder.
+4. Open **Downloads** (⌘6), paste a link, press **Download**. Watch the row go *Downloading → Processing → Identifying → Organizing → Complete*, then find the song under **Songs** (⌘1) and press Play.
+
+Everything ends up in `~/Music/LocalMusic` (changeable in Settings). Rebuild the index any time from **Library → Rebuild Library**.
 
 ## Requirements
 
-| Requirement | Notes |
+| | |
 |---|---|
-| macOS 14 Sonoma or later | Apple Silicon and Intel |
-| `yt-dlp`, `ffmpeg`, `ffprobe` | installed through Homebrew (see below) |
-| Xcode 16 **or** Command Line Tools with Swift 6 | to build from source |
-| `fpcalc` (Chromaprint) | optional, for fingerprint matching in a later phase |
+| macOS | 14 Sonoma or later, Apple Silicon or Intel (the release build is universal) |
+| yt-dlp | Homebrew, or the in-app download |
+| ffmpeg + ffprobe | `brew install ffmpeg` |
+| fpcalc (optional) | `brew install chromaprint`, only for AcoustID fingerprinting |
+| To build | Xcode 16, or just the Command Line Tools with Swift 6 |
 
-### Homebrew installation
+The app searches `~/Library/Application Support/LocalMusic/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin`, `~/.local/bin` and your `PATH`; paths can be overridden in **Settings → Advanced**. **Check for Tool Updates** compares against Homebrew or the latest GitHub release and tells you what to run. The app never installs or upgrades anything on its own.
 
-```sh
-brew install yt-dlp ffmpeg
-```
+## How identification works
 
-Optional fingerprinting support (used only when title/artist matching is inconclusive, and only if
-you add an AcoustID API key in **Settings → Metadata**):
+1. **Read what the source knows.** yt-dlp's `.info.json` (track/artist/album for YouTube Music and Topic uploads, Bandcamp, SoundCloud…) and any tags already in the file. Tags that yt-dlp itself stamped (upload title, channel name, upload year, site category) are recognised and *not* treated as real metadata.
+2. **Clean the title.** Bracketed and trailing noise is removed (`(Official Video)`, `[Lyrics]`, `HD`, `4K`, `Visualizer`, `Remastered 2011`, `| Official Audio`…), `feat.` clauses are separated, a trailing `(2013)` becomes the year, and `Artist - Title` / `Artist -Title` / `Title - Artist` (when the channel matches) is split. `- Topic` and `VEVO` channel suffixes are stripped.
+3. **Ask MusicBrainz.** `recording:"Jóga" AND artist:"Björk" AND dur:[290000 TO 320000]`, then a looser query if that returns nothing convincing.
+4. **Score candidates** 0–1: title 35 %, artist 30 %, duration 25 %, release quality 10 %, with penalties for live/remix versions you didn't ask for and lengths that are far off. A recording whose length MusicBrainz doesn't know can be offered but never applied automatically.
+5. **Pick the release** from complete data (the leaders are refreshed with a full lookup): official, non-compilation, album > EP > single, earliest date first (configurable), matching the album name when known.
+6. **Apply or ask.** At or above the confidence threshold (default 85 %) the match is applied and album art comes from the Cover Art Archive. Below it, the original metadata stays and the best few candidates wait behind **Choose Match…** on the queue row or **Re-identify Metadata…** in the library.
+7. **Optional fingerprint.** If both `fpcalc` and an AcoustID key (Settings → Metadata, stored in the Keychain) exist and text matching was weak, the file is fingerprinted and the returned recordings are scored too.
 
-```sh
-brew install chromaprint
-```
+MusicBrainz requests carry a descriptive User-Agent, are spaced ≥ 1.1 s apart, retried with backoff on 503/429, and cached for 30 days. MusicBrainz downtime never fails a download.
 
-The app looks for tools in its own `~/Library/Application Support/LocalMusic/bin`, then
-`/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin`, `~/.local/bin`, and everything on your
-`PATH`. Paths can be overridden in **Settings → Advanced**.
-
-**No Homebrew for yt-dlp?** The app can fetch the official standalone `yt-dlp_macos` build itself
-(**Download yt-dlp…** in the tools banner or Settings → Advanced). It asks first, verifies the
-release's published SHA-256 checksum, stores the binary in its own Application Support folder, and
-can remove it again. ffmpeg is not bundled: `brew install ffmpeg` remains the one manual step.
-Nothing else on the system is ever installed or modified. **Check for Tool Updates** compares
-against Homebrew or the latest GitHub release and tells you what to run (or offers the in-app update
-for the app-managed yt-dlp).
-
-## Building
-
-Three ways, one source tree:
-
-```sh
-# 1. Script build (no Xcode required; verified with Command Line Tools 16.4)
-make            # → build/debug/LocalMusic.app
-make run        # build and open
-make test       # Swift Testing suite
-make release    # optimized build
-
-# 2. Swift Package Manager (needs a working SwiftPM)
-swift build
-swift test
-
-# 3. Xcode project (needs XcodeGen: brew install xcodegen)
-make xcodeproj  # generates LocalMusic.xcodeproj from project.yml
-open LocalMusic.xcodeproj
-```
-
-The script build compiles `LocalMusicCore` as a static library, links the app against it, copies
-`Info.plist`, and ad-hoc signs the bundle. `Scripts/sdk.sh` picks a macOS SDK the installed
-compiler can actually use, which matters when the Command Line Tools carry a newer SDK than the
-compiler (a real situation on the machine this was first built on).
-
-Useful launch flags for development: `--mock` uses a simulated downloader that produces playable
-WAV tones so the UI can be exercised offline; `--download=<url>` queues a URL at launch;
-`--screenshot=<dir>` writes PNGs of the window a few seconds after launch.
-
-## Distributing the app
-
-```sh
-make dist   # → build/dist/LocalMusic-<version>.zip, universal (Apple Silicon + Intel), optimized
-```
-
-By default the bundle is ad-hoc signed, so recipients must right-click → **Open** the first time.
-For a clean Gatekeeper experience sign with a Developer ID and notarize:
-
-```sh
-CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=localmusic make dist
-# one-time: xcrun notarytool store-credentials localmusic --apple-id you@example.com --team-id TEAMID
-```
-
-The app has no bundled frameworks or third-party code and weighs a few megabytes; the only runtime
-dependencies are yt-dlp (which it can fetch for the user) and ffmpeg.
-
-## How the yt-dlp integration works
-
-Every tool call goes through `ProcessRunner`, which uses `Process` + `Pipe` with an argument
-array. There is no shell anywhere, and the URL is always the last argument after `--`, so nothing
-pasted by the user can be interpreted as an option.
-
-1. **Probe.** `yt-dlp --dump-single-json --flat-playlist` inspects the URL. A single item is
-   queued directly. A playlist opens a preview sheet (title, count, entries) where items can be
-   deselected. Each selected entry becomes its own job, so one failing item never aborts the rest.
-2. **Download.** Per job, yt-dlp runs in a private folder `~/Music/LocalMusic/.incoming/<job-id>/`
-   with `-f bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio/best`, `--embed-metadata`,
-   `--embed-thumbnail`, `--write-info-json`, and `--download-archive` (so a source URL is never
-   fetched twice). Progress arrives through `--progress-template` as `LMPROG|…` records that
-   `YTDLPProgressParser` turns into percentage, bytes, speed, ETA and playlist position; the
-   parser also understands yt-dlp's default human-readable progress line as a fallback. The final
-   path comes from `--print after_move:filepath`.
-3. **Format policy.** *Original* keeps the source stream (extracting audio without re-encoding).
-   Only Opus/WebM sources are converted to M4A, because AVFoundation cannot play them. *M4A* and
-   *MP3* force a compatibility conversion. If ffmpeg is missing or broken, yt-dlp still downloads
-   the best audio stream, but no post-processing happens.
-4. **Process, identify, organize, index.** The file is validated with AVFoundation, source metadata
-   from `.info.json` is merged with embedded tags (never inventing values), `FileOrganizer` moves it
-   to its final location, and `LibraryStore` records it. The job folder is deleted afterwards, so
-   partial files never touch the library.
-5. **Errors.** `YTDLPErrorClassifier` maps tool output to user-facing messages (private video,
-   unavailable, region-restricted, sign-in required, network, disk full, permissions, cancelled).
-   Raw output stays available under **Technical Details** on each queue row.
-
-### TLS trust for yt-dlp
-
-python.org builds of Python ship their own certificate store, so yt-dlp can fail with
-`CERTIFICATE_VERIFY_FAILED` on networks with an inspecting proxy even though Safari and curl work.
-LocalMusic exports the roots macOS trusts (`security find-certificate -p`) into
-`~/Library/Application Support/LocalMusic/macos-trusted-roots.pem` and passes it to yt-dlp as
-`SSL_CERT_FILE`. This grants yt-dlp exactly the trust the OS has; verification is never disabled.
-Set `SSL_CERT_FILE` yourself to override.
-
-## MusicBrainz API usage
-
-After a download the app tries to identify the actual recording instead of trusting the upload
-title:
-
-1. Source metadata (`.info.json`) and embedded tags are read; the title is cleaned of noise
-   (Official Video, Lyrics, HD, 4K, Visualizer, Remastered, "- Topic" channels…) and split into
-   artist/title when it follows the `Artist - Title` pattern.
-2. The MusicBrainz recording search is queried with a Lucene expression such as
-   `recording:"Jóga" AND artist:"Björk" AND dur:[290000 TO 320000]`. If nothing convincing comes
-   back, a second query drops the duration window (and the artist, if it was only a channel guess).
-3. Candidates are scored 0–1 from title similarity (35 %), artist similarity (30 %), duration
-   closeness (25 %) and release quality (10 %), with penalties for live/remix versions the user did
-   not ask for and for recordings whose length is far off. A recording whose length MusicBrainz does
-   not know can never be applied automatically.
-4. The leading candidates are refreshed with a full recording lookup so the release is chosen from
-   complete data: official, non-compilation, album before EP before single, earliest date first
-   (configurable), and matching an album name when one was known.
-5. Matches at or above the confidence threshold (default 85 %) are applied; otherwise the original
-   metadata stays and the best few candidates are offered under **Choose Match…** on the queue row,
-   or later via **Re-identify Metadata…** in the library.
-6. Cover art is fetched from the Cover Art Archive (release front, then release-group front) and,
-   when the setting is on, replaces the video thumbnail.
-
-Requests carry the User-Agent `LocalMusic/0.1 (open-source macOS music organizer; local desktop
-app)`, are spaced at least 1.1 s apart, retried with backoff on 503/429, and cached for 30 days
-under `~/Library/Application Support/LocalMusic/MetadataCache` (clear it in **Settings →
-Advanced**). MusicBrainz downtime never fails a download; the track is kept with its original tags.
-
-### AcoustID (optional)
-
-When text matching stays below the threshold and both `fpcalc` and an AcoustID API key are
-available, the file is fingerprinted (`fpcalc -json`), looked up at `api.acoustid.org`, and the
-returned MusicBrainz recording IDs are scored like any other candidate with a fingerprint bonus. The
-key lives in the macOS Keychain and is never logged.
-
-## Library folder structure
+## Library layout
 
 ```
 ~/Music/LocalMusic/
-├── .incoming/                       # private per-job folders; cleaned after every job
+├── .incoming/                              # private per-job folders, removed after every job
 ├── Daft Punk/
 │   └── 2013 - Random Access Memories/
-│       └── 01 - Give Life Back to Music.m4a
-├── Some Artist/
+│       └── 08 - Get Lucky.m4a
+├── Björk/
+│   └── 1997 - Homogenic/
+│       └── 02 - Jóga.m4a
+├── Kevin MacLeod/
 │   └── Singles/
-│       └── Track Without Album.m4a
+│       └── Monkeys Spinning Monkeys.m4a
 └── Unknown Artist/
     └── Unknown Album/
-        └── Unidentified Title.m4a
+        └── Something Unidentified.m4a
 ```
 
-Templates are configurable in **Settings → Organization** (`{AlbumArtist} {Artist} {Album} {Year}
-{Track} {Disc} {Title} {Genre}`). Every path component is sanitized (`/`, `:`, control characters,
-leading dots, 200-byte limit on grapheme boundaries), collisions get a ` (2)` suffix after a
-case-insensitive check, and no move or delete ever targets a path outside the library root.
+Folder and file templates are editable in **Settings → Organization** (`{AlbumArtist} {Artist} {Album} {Year} {Track} {Disc} {Title} {Genre}`). Each path component is sanitized (`/`, `:`, control characters, leading dots, 200-byte limit on grapheme boundaries), collisions get ` (2)` after a case-insensitive check, and every move or delete is verified to stay inside the library root. The source URL is written into the file's comment tag, so **Rebuild Library** recovers it too. Deleting from the app moves files to the Trash.
 
-The index lives in `~/Library/Application Support/LocalMusic/Library.sqlite`. Files are the source
-of truth; **Library → Rebuild Library** drops the index and rescans the folder. Deleting from the
-app moves files to the Trash.
+## Formats
 
-## Library views and playlists
+| Setting | Result |
+|---|---|
+| Original (default) | The source stream, extracted without re-encoding: M4A/AAC from YouTube, MP3/FLAC from sites that serve them. Opus/WebM sources are converted to 256 kb/s AAC because AVFoundation can't play them. |
+| Always M4A | Everything transcoded to AAC. |
+| Always MP3 | Everything transcoded to MP3. |
 
-- **Songs** is a sortable table (artwork, title, artist, album, year, duration, format, date
-  added) with a context menu: Play, Play Next, Add to Queue, Add to Playlist, Add to Favorites,
-  Edit Metadata, Re-identify Metadata, Reveal in Finder, Copy Source URL, Delete (to Trash).
-  ⌘I opens the editor for the selected song; ⌘1…⌘6 switch views.
-- **Albums** groups by album artist + album (tracks without an album form a per-artist *Singles*
-  card); **Artists** lists artists with their albums and tracks.
-- **Playlists** live in the local database. Create one with the **+** in the sidebar or ⌘⇧N, rename
-  or delete from its context menu, drag songs from the Songs table onto a playlist in the sidebar or
-  into the playlist view, reorder by dragging, and remove with Delete. **Export M3U8** writes an
-  Extended M3U file with paths relative to the file; **File → Import Playlist (M3U8)…** matches
-  entries against library paths and reports anything it could not find.
-- The **Up Next** button in the now-playing bar shows the playback queue; songs can be removed or
-  jumped to. Shuffle and repeat (off / all / one) are in the bar and the Controls menu.
+Tags are written natively into M4A (passthrough export, no re-encode), MP3 (ID3v2.4, foreign frames preserved) and FLAC (Vorbis comments + PICTURE, other blocks preserved). Ogg/WAV/AIFF go through ffmpeg stream-copy.
+
+## Building
+
+```sh
+make            # debug build → build/debug/LocalMusic.app   (no Xcode needed)
+make run        # build and launch
+make test       # 81 Swift Testing tests
+make dist       # optimized universal build + zip → build/dist/
+make install    # make dist, then copy to /Applications
+make icon       # regenerate the app icon from Scripts/make-icon.swift
+make xcodeproj  # generate LocalMusic.xcodeproj (needs XcodeGen)
+```
+
+The script build drives `swiftc` directly and picks a macOS SDK the installed compiler can use, so it works with a bare Command Line Tools install. `Package.swift` and `project.yml` describe the same three targets (`LocalMusicCore`, `LocalMusic`, `LocalMusicTests`) for SwiftPM and Xcode.
+
+For distribution, sign with a Developer ID and notarize in one go:
+
+```sh
+CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=localmusic make dist
+# once: xcrun notarytool store-credentials localmusic --apple-id you@example.com --team-id TEAMID
+```
+
+Handy launch flags for development: `--mock` (simulated downloads that produce playable tones), `--download=<url>`, `--select=albums|artists|playlist|…`, `--screenshot=<dir>`, and `--profile=<dir>` to run against a throwaway library.
+
+### Architecture
+
+```
+Sources/LocalMusicCore   models · services · persistence · utilities  (no SwiftUI, public API, unit-tested)
+Sources/LocalMusic       App · ViewModels · Views                       (SwiftUI)
+Tests/LocalMusicTests    Swift Testing suites
+```
+
+Key decisions: every tool runs through `ProcessRunner` (argument arrays, no shell, URL last after `--`); `DownloadManager` runs one task per job through *download → process → identify → organize → index*; Core Data with a programmatic model keeps the index (files stay the source of truth); `PathGuard` confines all file operations to the library; the app is intentionally not sandboxed because it must run unsigned Homebrew binaries that write into your Music folder.
 
 ## Troubleshooting
 
-- **"Tools missing" / banner says ffmpeg is installed but fails to run.** A Homebrew upgrade can
-  leave ffmpeg linked against a library version that is gone (for example
-  `libx265.215.dylib`). Run `brew reinstall ffmpeg` (or `brew upgrade`), then click **Re-check**.
-- **Downloads fail with a certificate error.** See *TLS trust for yt-dlp* above; also try
-  `brew upgrade yt-dlp`.
-- **YouTube says "Sign in to confirm you're not a bot".** yt-dlp is being rate-limited or blocked;
-  wait, update yt-dlp, or try from another network. LocalMusic does not support cookies or logins.
-- **A downloaded track will not play.** Only M4A/AAC, MP3, FLAC, WAV, AIFF and CAF play natively.
-  Opus/WebM files are converted automatically when ffmpeg works; fix ffmpeg and re-download.
-- **Build fails with "this SDK is not supported by the compiler".** The Command Line Tools have a
-  newer SDK than the compiler. `Scripts/sdk.sh` works around it; alternatively reinstall the CLT or
-  install Xcode.
-- **`swift build` crashes on launch.** Some CLT installs ship a broken SwiftPM; use `make` instead.
-- **"MusicBrainz is busy or down (HTTP 503)".** MusicBrainz rate-limits per IP address; on a shared
-  network the limit may already be used up. The track keeps its original metadata; use
-  **Re-identify Metadata…** later. Responses are cached, so repeated lookups do not cost requests.
-- **Logs.** **Library → Open Logs Folder** opens `~/Library/Logs/LocalMusic/`. Logs never contain
-  API keys.
+- **"Tools missing" / ffmpeg fails to run.** A Homebrew upgrade can leave ffmpeg linked against a library that's gone. `brew reinstall ffmpeg`, then **Re-check**.
+- **"The site refused to serve the media (HTTP 403)".** yt-dlp is out of date; YouTube changes often. Update it (Settings → Advanced → Check for Tool Updates tells you how).
+- **"Sign in to confirm you're not a bot".** YouTube is rate-limiting your network. Wait, update yt-dlp, or try another network; LocalMusic doesn't support cookies or logins.
+- **Certificate errors from yt-dlp** (common on corporate networks with python.org builds of yt-dlp). The app hands yt-dlp the roots macOS trusts via `SSL_CERT_FILE`; set the variable yourself to override. Verification is never disabled.
+- **"MusicBrainz is busy or down (HTTP 503)".** Per-IP rate limit, common on shared networks. The track keeps its original tags; use **Re-identify Metadata…** later.
+- **Wrong artist/title on a fan upload.** Right-click → **Re-identify Metadata…** or **Edit Metadata…**. Prefer YouTube Music / "Topic" links when you can: they carry real metadata.
+- **Logs.** **Library → Open Logs Folder** (`~/Library/Logs/LocalMusic/`). Each queue row also has a **Technical Details** disclosure with the raw yt-dlp/ffmpeg output. Logs never contain API keys.
 
-## Privacy model
+## Privacy
 
-- Everything stays on this Mac: the index, artwork cache, logs, and the download archive.
-- Network access happens only through yt-dlp to the site you pasted, to MusicBrainz and the Cover
-  Art Archive for identification (can be switched off in Settings → Metadata), to GitHub's release
-  page when you ask to check for tool updates, and to AcoustID only if you configure a key.
-- No analytics, telemetry, accounts, or cloud sync. No third-party SDKs.
-- Pasted URLs and downloaded metadata are treated as untrusted: they are never passed through a
-  shell, and every derived file path is checked against the library root before use.
-- The app is not sandboxed because it must execute unsigned Homebrew binaries that write into your
-  Music folder; it deliberately touches only `~/Music/LocalMusic`, its own Application Support
-  folder, and its log folder.
+Everything stays on your Mac: the index, artwork and metadata caches, logs, the download archive. The app talks only to the site you pasted (via yt-dlp), to MusicBrainz and the Cover Art Archive for identification (switchable off), to GitHub when you ask for a tool update or the yt-dlp download, and to AcoustID only if you configure a key. No analytics, no accounts, no third-party SDKs. Pasted URLs and downloaded metadata are untrusted input: never passed through a shell, always path-checked before touching disk.
+
+## Use it responsibly
+
+LocalMusic is a tool for media you have the right to download: your own uploads, Creative Commons and public-domain works, purchases from sites that allow it. The screenshots use Kevin MacLeod's CC-BY catalogue and the Blender Foundation's open movies.

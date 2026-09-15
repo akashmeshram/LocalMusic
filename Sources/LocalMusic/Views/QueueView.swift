@@ -45,5 +45,6 @@ struct QueueView: View {
             }
         }
         .frame(width: 360)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }

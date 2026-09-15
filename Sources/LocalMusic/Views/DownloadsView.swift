@@ -344,6 +344,7 @@ struct PlaylistPreviewSheet: View {
         }
         .frame(width: 560, height: 520)
         .onAppear { selected = Set(playlist.entries.map(\.id)) }
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 

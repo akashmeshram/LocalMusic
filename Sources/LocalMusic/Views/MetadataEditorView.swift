@@ -61,6 +61,7 @@ struct MetadataEditorView: View {
             .padding(14)
         }
         .frame(width: 680)
+        .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { loadCurrentArtwork() }
     }
 

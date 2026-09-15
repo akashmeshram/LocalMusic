@@ -31,6 +31,12 @@ struct AlbumsView: View {
         .navigationSubtitle(selected.map { "\($0.artist) · \($0.tracks.count) songs" } ?? "\(env.library.albums.count) albums")
         .searchable(text: $library.searchText, placement: .toolbar, prompt: "Search albums")
         .onChange(of: env.library.tracks) { if let s = selected { selected = env.library.albums.first { $0.id == s.id } } }
+        .onAppear {
+            // `--select=album` opens the first (largest) album's detail; used for screenshots.
+            if LaunchOptions.initialSelection == "album", selected == nil {
+                selected = env.library.albums.max { $0.tracks.count < $1.tracks.count }
+            }
+        }
     }
 
     @ViewBuilder
