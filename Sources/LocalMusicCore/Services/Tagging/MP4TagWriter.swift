@@ -14,12 +14,12 @@ public struct MP4TagWriter: TagWriter {
         .commonIdentifierCreationDate, .commonIdentifierAuthor, .commonIdentifierType,
     ]
 
-    /// Freeform iTunes atoms ("----" with mean com.apple.iTunes) live in the "itlk" key space with a
-    /// percent-encoded key. Any other string makes `AVMutableMetadataItem` throw an ObjC exception.
+    /// Freeform iTunes atoms ("----" with mean com.apple.iTunes) surface in AVFoundation as
+    /// `itlk/com.apple.iTunes.<name>` with spaces percent-encoded (e.g. the iTunSMPB atom). Any other
+    /// string makes `AVMutableMetadataItem` throw an uncatchable ObjC exception or is silently dropped.
     static func freeformIdentifier(_ name: String) -> AVMetadataIdentifier? {
-        let key = "com.apple.iTunes/" + name
-        guard let encoded = key.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return nil }
-        let id = AVMetadataIdentifier("itlk/" + encoded)
+        guard let encoded = name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return nil }
+        let id = AVMetadataIdentifier("itlk/com.apple.iTunes." + encoded)
         guard AVMetadataItem.keySpace(forIdentifier: id) != nil, AVMetadataItem.key(forIdentifier: id) != nil else { return nil }
         return id
     }

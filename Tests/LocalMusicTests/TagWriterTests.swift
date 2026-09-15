@@ -111,7 +111,7 @@ struct TagWriterTests {
         let allItems = try await AVURLAsset(url: url).load(.metadata)
         let mbItems = allItems.filter { MP4TagWriter.isMusicBrainzItem($0) }
         #expect(mbItems.count == 2)
-        let trackIDItem = mbItems.first { ($0.identifier.flatMap { AVMetadataItem.key(forIdentifier: $0) as? String }) == "com.apple.iTunes/MusicBrainz Track Id" }
+        let trackIDItem = mbItems.first { ($0.identifier.flatMap { AVMetadataItem.key(forIdentifier: $0) as? String }) == "com.apple.iTunes.MusicBrainz Track Id" }
         #expect(try await trackIDItem?.load(.stringValue) == "rec-123")
         #expect(after.title == "Tagged ✓")
         #expect(after.artist == "Someone")
