@@ -2,15 +2,21 @@ import Foundation
 
 /// Well-known locations used by the app. All are per-user and local.
 public enum AppPaths {
-    public static let defaultMusicDirectory: URL = {
-        FileManager.default.urls(for: .musicDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("LocalMusic", isDirectory: true)
-    }()
+    /// When set (via `--profile=<dir>`), the index, caches and default music folder live under this
+    /// directory instead of the user's Library/Music. Used for demos and tests; set once at launch.
+    nonisolated(unsafe) public static var profileDirectory: URL?
 
-    public static let applicationSupport: URL = {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    public static var defaultMusicDirectory: URL {
+        if let profileDirectory { return profileDirectory.appendingPathComponent("Music", isDirectory: true) }
+        return FileManager.default.urls(for: .musicDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("LocalMusic", isDirectory: true)
-    }()
+    }
+
+    public static var applicationSupport: URL {
+        if let profileDirectory { return profileDirectory.appendingPathComponent("Library", isDirectory: true) }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("LocalMusic", isDirectory: true)
+    }
 
     public static var databaseURL: URL { applicationSupport.appendingPathComponent("Library.sqlite") }
     public static var downloadArchiveURL: URL { applicationSupport.appendingPathComponent("download-archive.txt") }

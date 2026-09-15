@@ -14,13 +14,28 @@ public struct MP4TagWriter: TagWriter {
         .commonIdentifierCreationDate, .commonIdentifierAuthor, .commonIdentifierType,
     ]
 
+    /// Freeform iTunes atoms ("----" with mean com.apple.iTunes) live in the "itlk" key space with a
+    /// percent-encoded key. Any other string makes `AVMutableMetadataItem` throw an ObjC exception.
+    static func freeformIdentifier(_ name: String) -> AVMetadataIdentifier? {
+        let key = "com.apple.iTunes/" + name
+        guard let encoded = key.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return nil }
+        let id = AVMetadataIdentifier("itlk/" + encoded)
+        guard AVMetadataItem.keySpace(forIdentifier: id) != nil, AVMetadataItem.key(forIdentifier: id) != nil else { return nil }
+        return id
+    }
+
+    static func isMusicBrainzItem(_ item: AVMetadataItem) -> Bool {
+        guard let id = item.identifier, let key = AVMetadataItem.key(forIdentifier: id) as? String else { return false }
+        return key.lowercased().contains("musicbrainz")
+    }
+
     public func write(_ tags: TrackTags, to file: URL) async throws {
         let asset = AVURLAsset(url: file)
         let existing = try await asset.load(.metadata)
         var items: [AVMetadataItem] = existing.filter { item in
             guard let id = item.identifier else { return true }
             if Self.managed.contains(id) { return false }
-            if id.rawValue.hasPrefix("itsk/----:com.apple.iTunes:MusicBrainz") { return false }
+            if Self.isMusicBrainzItem(item) { return false }
             return true
         }
         if case .keep = tags.artwork, let art = existing.first(where: { $0.identifier == .iTunesMetadataCoverArt || $0.identifier == .commonIdentifierArtwork }) {
@@ -53,6 +68,8 @@ public struct MP4TagWriter: TagWriter {
 
     static func item(_ id: AVMetadataIdentifier, _ value: (any NSCopying & NSObjectProtocol)?, dataType: String? = nil) -> AVMetadataItem? {
         guard let value else { return nil }
+        // Never hand AVFoundation an identifier it cannot parse: that raises an uncatchable ObjC exception.
+        guard AVMetadataItem.keySpace(forIdentifier: id) != nil, AVMetadataItem.key(forIdentifier: id) != nil else { return nil }
         let item = AVMutableMetadataItem()
         item.identifier = id
         item.value = value
@@ -80,11 +97,11 @@ public struct MP4TagWriter: TagWriter {
             var d = Data([0, 0]); d.appendBE16(UInt16(clamping: disc)); d.appendBE16(0)
             list.append(item(.iTunesMetadataDiscNumber, d as NSData))
         }
-        if let mbid = tags.musicBrainzRecordingID {
-            list.append(item(AVMetadataIdentifier("itsk/----:com.apple.iTunes:MusicBrainz Track Id"), mbid as NSString))
+        if let mbid = tags.musicBrainzRecordingID, let id = freeformIdentifier("MusicBrainz Track Id") {
+            list.append(item(id, mbid as NSString))
         }
-        if let rel = tags.musicBrainzReleaseID {
-            list.append(item(AVMetadataIdentifier("itsk/----:com.apple.iTunes:MusicBrainz Album Id"), rel as NSString))
+        if let rel = tags.musicBrainzReleaseID, let id = freeformIdentifier("MusicBrainz Album Id") {
+            list.append(item(id, rel as NSString))
         }
         if case .replace(let image) = tags.artwork {
             let type = ImageSniffer.mimeType(of: image) == "image/png" ? "com.apple.metadata.datatype.PNG" : "com.apple.metadata.datatype.JPEG"

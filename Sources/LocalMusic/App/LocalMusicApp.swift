@@ -64,6 +64,8 @@ enum LaunchOptions {
     }
 
     static var downloadURLs: [String] { values(for: "--download") }
+    /// `--profile=<dir>`: keep index, caches and music under this directory (demo / test sandbox).
+    static var profileDirectory: URL? { values(for: "--profile").first.map { URL(fileURLWithPath: $0, isDirectory: true) } }
     /// `--select=songs|albums|artists|recent|favorites|downloads|playlist` (playlist creates a demo list if none exists).
     static var initialSelection: String? { values(for: "--select").first }
 

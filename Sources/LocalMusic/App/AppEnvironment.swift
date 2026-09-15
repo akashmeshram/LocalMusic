@@ -83,7 +83,14 @@ final class AppEnvironment {
     }
 
     static func live() -> AppEnvironment {
-        let settings = AppSettings()
+        let settings: AppSettings
+        if let profile = LaunchOptions.profileDirectory {
+            AppPaths.profileDirectory = profile
+            settings = AppSettings(defaults: UserDefaults(suiteName: "dev.localmusic.profile." + profile.lastPathComponent) ?? .standard)
+            settings.musicDirectoryPath = AppPaths.defaultMusicDirectory.path
+        } else {
+            settings = AppSettings()
+        }
         var startupError: LocalMusicError?
     var ytdlpInstallStage: ToolInstaller.Stage?
     var ytdlpInstallError: LocalMusicError?

@@ -105,9 +105,14 @@ struct TagWriterTests {
         #expect(before.duration > 0.5)
 
         let jpeg = try #require(Self.solidJPEG())
-        let tags = TrackTags(title: "Tagged ✓", artist: "Someone", albumArtist: "Someone", album: "An Album", trackNumber: 4, trackTotal: 12, discNumber: 2, genre: "Ambient", year: 2021, composer: "C", artwork: .replace(jpeg))
+        let tags = TrackTags(title: "Tagged ✓", artist: "Someone", albumArtist: "Someone", album: "An Album", trackNumber: 4, trackTotal: 12, discNumber: 2, genre: "Ambient", year: 2021, composer: "C", musicBrainzRecordingID: "rec-123", musicBrainzReleaseID: "rel-456", artwork: .replace(jpeg))
         try await MP4TagWriter().write(tags, to: url)
         let after = try await AudioMetadataReader.read(url)
+        let allItems = try await AVURLAsset(url: url).load(.metadata)
+        let mbItems = allItems.filter { MP4TagWriter.isMusicBrainzItem($0) }
+        #expect(mbItems.count == 2)
+        let trackIDItem = mbItems.first { ($0.identifier.flatMap { AVMetadataItem.key(forIdentifier: $0) as? String }) == "com.apple.iTunes/MusicBrainz Track Id" }
+        #expect(try await trackIDItem?.load(.stringValue) == "rec-123")
         #expect(after.title == "Tagged ✓")
         #expect(after.artist == "Someone")
         #expect(after.albumArtist == "Someone")
@@ -120,10 +125,13 @@ struct TagWriterTests {
         #expect(after.artwork != nil)
         #expect(abs(after.duration - before.duration) < 0.1)
 
-        var tags2 = tags; tags2.artwork = .remove; tags2.album = nil
+        var tags2 = tags; tags2.artwork = .remove; tags2.album = nil; tags2.musicBrainzRecordingID = nil; tags2.musicBrainzReleaseID = nil
         try await MP4TagWriter().write(tags2, to: url)
         let third = try await AudioMetadataReader.read(url)
         #expect(third.artwork == nil && third.album == nil && third.title == "Tagged ✓")
+        let remaining = try await AVURLAsset(url: url).load(.metadata).filter { MP4TagWriter.isMusicBrainzItem($0) }
+        #expect(remaining.isEmpty)
+        #expect(MP4TagWriter.item(AVMetadataIdentifier("itsk/----:bogus"), "x" as NSString) == nil)
     }
 
     /// Encodes one second of silence as AAC.
