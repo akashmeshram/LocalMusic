@@ -127,7 +127,7 @@ struct MetadataEditorView: View {
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first else { return false }
         if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { @Sendable item, _ in
                 guard let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil),
                       let bytes = try? Data(contentsOf: url) else { return }
                 Task { @MainActor in setArtwork(bytes) }
@@ -135,7 +135,7 @@ struct MetadataEditorView: View {
             return true
         }
         if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-            provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+            provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { @Sendable data, _ in
                 guard let data else { return }
                 Task { @MainActor in setArtwork(data) }
             }

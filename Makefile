@@ -1,4 +1,4 @@
-.PHONY: build release dist install icon run test clean xcodeproj
+.PHONY: build release dist install icon run test e2e clean xcodeproj
 build:
 	@Scripts/build.sh debug
 dist:
@@ -18,3 +18,5 @@ xcodeproj:
 	@xcodegen generate
 clean:
 	@rm -rf build .build
+e2e:
+	@Scripts/e2e.sh

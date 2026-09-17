@@ -37,7 +37,8 @@ final class LibraryViewModel {
     }
 
     /// Scans the music folder, adds new files, updates changed ones and drops rows whose file is gone.
-    func rescan() async {
+    /// `preserving` supplies records to keep ids, play counts and favorites for (defaults to the current index).
+    func rescan(preserving previous: [TrackRecord]? = nil) async {
         guard !isScanning else { return }
         isScanning = true
         scanProgress = nil
@@ -45,7 +46,7 @@ final class LibraryViewModel {
         let root = env.settings.musicDirectory
         do {
             try AppPaths.ensureDirectories(musicRoot: root)
-            let existing = Dictionary(uniqueKeysWithValues: tracks.map { ($0.fileURL.path, $0) })
+            let existing = Dictionary((previous ?? tracks).map { ($0.fileURL.resolvingSymlinksInPath().path, $0) }, uniquingKeysWith: { a, _ in a })
             let scanned = try await scanner.scan(root: root) { done, total in
                 Task { @MainActor [weak self] in self?.scanProgress = (done, total) }
             }
@@ -53,7 +54,7 @@ final class LibraryViewModel {
             for item in scanned {
                 var artworkName: String?
                 if let data = item.metadata.artwork { artworkName = try? env.artwork.store(data) }
-                records.append(LibraryScanner.record(from: item, root: root, existing: existing[item.fileURL.path], artworkFileName: artworkName))
+                records.append(LibraryScanner.record(from: item, root: root, existing: existing[item.fileURL.resolvingSymlinksInPath().path], artworkFileName: artworkName))
             }
             try await env.store.upsert(records)
             let removed = try await env.store.deleteTracks(notIn: Set(scanned.map(\.fileURL.path)))
@@ -65,12 +66,14 @@ final class LibraryViewModel {
         }
     }
 
-    /// Drops the index and rebuilds it from the files on disk.
+    /// Drops the index and rebuilds it from the files on disk. Play counts, favorites and source
+    /// URLs of files that still exist are carried over by path.
     func rebuild() async {
         do {
+            let previous = tracks
             try await env.store.deleteAll()
             tracks = []
-            await rescan()
+            await rescan(preserving: previous)
         } catch {
             errorMessage = LocalMusicError.wrap(error).message
         }

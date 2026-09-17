@@ -61,8 +61,11 @@ public final class AppSettings {
     public var ffprobePath: String { didSet { defaults.set(ffprobePath, forKey: Key.ffprobePath) } }
     public var fpcalcPath: String { didSet { defaults.set(fpcalcPath, forKey: Key.fpcalcPath) } }
 
+    /// Symlinks are resolved so every service, the scanner and the index agree on one spelling of
+    /// each path (e.g. /tmp vs /private/tmp, or a symlinked Music folder).
     public var musicDirectory: URL {
         URL(fileURLWithPath: (musicDirectoryPath as NSString).expandingTildeInPath, isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath()
     }
 
     public var toolOverrides: [Tool: String] {

@@ -10,6 +10,10 @@ public actor MusicBrainzService {
     private let cache: MetadataCache
     private let session: URLSession
     private var lastRequest = Date.distantPast
+    /// Circuit breaker: after retries are exhausted, further lookups fail fast until this time so a
+    /// throttled or down MusicBrainz cannot stall every job in the queue for minutes.
+    private var unavailableUntil: Date?
+    static let cooldown: TimeInterval = 60
 
     public init(cache: MetadataCache = MetadataCache(), session: URLSession = .shared) {
         self.cache = cache
@@ -70,6 +74,12 @@ public actor MusicBrainzService {
     // MARK: Transport
 
     private func get(_ url: URL) async throws -> Data {
+        if let until = unavailableUntil {
+            if until > Date() {
+                throw LocalMusicError(kind: .network, message: "MusicBrainz is rate-limiting this network; lookups are paused for a minute. The track keeps its original metadata; use Re-identify Metadata later.")
+            }
+            unavailableUntil = nil
+        }
         var attempt = 0
         while true {
             attempt += 1
@@ -91,10 +101,12 @@ public actor MusicBrainzService {
             case 200..<300:
                 return data
             case 503, 429, 502, 504:
-                if attempt < 4 {
+                if attempt < 3 {
                     try await Task.sleep(for: .seconds(Double(attempt) * 3))
                     continue
                 }
+                unavailableUntil = Date().addingTimeInterval(Self.cooldown)
+                Log.warning("MusicBrainz unavailable (HTTP \(status)); pausing lookups for \(Int(Self.cooldown))s", .metadata)
                 throw LocalMusicError(kind: .network, message: "MusicBrainz is busy or down (HTTP \(status)). The track was kept with its original metadata; use Re-identify Metadata later.", technicalDetails: String(data: data, encoding: .utf8))
             case 404:
                 return Data("{}".utf8)

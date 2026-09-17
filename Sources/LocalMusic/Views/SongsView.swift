@@ -70,7 +70,7 @@ struct SongsView: View {
         @Bindable var library = env.library
         return Table(of: TrackRecord.self, selection: $selection, sortOrder: $library.sortOrder) {
             TableColumn("") { track in
-                ArtworkView(fileName: track.artworkFileName, size: 28, cornerRadius: 3)
+                ArtworkView(url: env.artworkURL(track.artworkFileName), size: 28, cornerRadius: 3)
             }
             .width(34)
 

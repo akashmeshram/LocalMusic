@@ -26,6 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
+        // Objective-C exceptions cannot be caught from Swift; at least record them before the abort.
+        NSSetUncaughtExceptionHandler { exception in
+            Log.error("uncaught exception \(exception.name.rawValue): \(exception.reason ?? "") \n\(exception.callStackSymbols.prefix(12).joined(separator: "\n"))", .app)
+        }
         LaunchOptions.scheduleScreenshots()
     }
 
@@ -64,6 +68,8 @@ enum LaunchOptions {
     }
 
     static var downloadURLs: [String] { values(for: "--download") }
+    /// `--e2e=all` or `--e2e=name,name`: run end-to-end scenarios, then exit with status.
+    static var e2eScenarios: [String]? { values(for: "--e2e").first?.split(separator: ",").map(String.init) }
     /// `--profile=<dir>`: keep index, caches and music under this directory (demo / test sandbox).
     static var profileDirectory: URL? { values(for: "--profile").first.map { URL(fileURLWithPath: $0, isDirectory: true) } }
     /// `--select=songs|albums|artists|recent|favorites|downloads|playlist` (playlist creates a demo list if none exists).

@@ -38,6 +38,11 @@ struct ContentView: View {
             let urls = LaunchOptions.downloadURLs
             if !urls.isEmpty { env.selectedSidebar = .downloads }
             for url in urls { await env.downloads.submit(url) }
+            if let scenarios = LaunchOptions.e2eScenarios {
+                let ok = await E2ERunner(env: env).run(scenarios)
+                LaunchOptions.capture(to: LaunchOptions.screenshotDirectory ?? FileManager.default.temporaryDirectory, index: 99)
+                exit(ok ? 0 : 1)
+            }
         }
         .alert("Startup problem", isPresented: Binding(get: { env.startupError != nil }, set: { if !$0 { env.startupError = nil } })) {
             Button("OK") {}
@@ -144,7 +149,7 @@ struct SidebarView: View {
     static func handleDrop(_ providers: [NSItemProvider], _ apply: @escaping @Sendable ([UUID]) -> Void) -> Bool {
         guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.utf8PlainText.identifier) || $0.hasItemConformingToTypeIdentifier(UTType.text.identifier) }) else { return false }
         let type = provider.hasItemConformingToTypeIdentifier(UTType.utf8PlainText.identifier) ? UTType.utf8PlainText.identifier : UTType.text.identifier
-        provider.loadItem(forTypeIdentifier: type) { item, _ in
+        provider.loadItem(forTypeIdentifier: type) { @Sendable item, _ in
             let string = (item as? String) ?? (item as? Data).flatMap { String(data: $0, encoding: .utf8) } ?? (item as? NSString).map(String.init)
             guard let string, let ids = TrackDrag.parse(string), !ids.isEmpty else { return }
             apply(ids)

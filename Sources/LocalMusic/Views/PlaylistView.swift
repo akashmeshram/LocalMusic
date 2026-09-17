@@ -72,7 +72,7 @@ struct PlaylistView: View {
 
     private func header(_ playlist: PlaylistRecord) -> some View {
         HStack(spacing: 16) {
-            ArtworkView(fileName: tracks.first { $0.artworkFileName != nil }?.artworkFileName, size: 72, cornerRadius: 8)
+            ArtworkView(url: env.artworkURL(tracks.first { $0.artworkFileName != nil }?.artworkFileName), size: 72, cornerRadius: 8)
             VStack(alignment: .leading, spacing: 4) {
                 Text(playlist.name).font(.title2.weight(.semibold))
                 Text("Created \(playlist.createdAt.formatted(date: .abbreviated, time: .omitted))").font(.caption).foregroundStyle(.secondary)
@@ -89,7 +89,7 @@ struct PlaylistView: View {
     private func row(index: Int, track: TrackRecord) -> some View {
         HStack(spacing: 10) {
             Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 28, alignment: .trailing)
-            ArtworkView(fileName: track.artworkFileName, size: 28, cornerRadius: 3)
+            ArtworkView(url: env.artworkURL(track.artworkFileName), size: 28, cornerRadius: 3)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     if env.playback.currentTrack?.id == track.id { Image(systemName: "speaker.wave.2.fill").foregroundStyle(Color.accentColor).font(.caption) }
@@ -108,7 +108,7 @@ struct PlaylistView: View {
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.utf8PlainText.identifier) || $0.hasItemConformingToTypeIdentifier(UTType.text.identifier) }) else { return false }
         let type = provider.hasItemConformingToTypeIdentifier(UTType.utf8PlainText.identifier) ? UTType.utf8PlainText.identifier : UTType.text.identifier
-        provider.loadItem(forTypeIdentifier: type) { item, _ in
+        provider.loadItem(forTypeIdentifier: type) { @Sendable item, _ in
             let string = (item as? String) ?? (item as? Data).flatMap { String(data: $0, encoding: .utf8) } ?? (item as? NSString).map(String.init)
             guard let string, let ids = TrackDrag.parse(string), !ids.isEmpty else { return }
             Task { @MainActor in await env.library.addTracks(ids, toPlaylist: playlistID) }

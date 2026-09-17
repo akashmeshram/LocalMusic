@@ -134,7 +134,8 @@ public final class PlaybackService {
         let clamped = max(0, min(seconds, duration))
         isSeeking = true
         currentTime = clamped
-        player.seek(to: CMTime(seconds: clamped, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+        player.seek(to: CMTime(seconds: clamped, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { @Sendable [weak self] _ in
+            // AVPlayer calls back on its own queue; hop explicitly instead of trapping on isolation.
             Task { @MainActor in
                 self?.isSeeking = false
                 self?.updateNowPlayingElapsed()
@@ -169,7 +170,7 @@ public final class PlaybackService {
         endObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.handleTrackEnded() }
         }
-        statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+        statusObservation = item.observe(\.status, options: [.new]) { @Sendable [weak self] item, _ in
             let failure = item.status == .failed ? (item.error?.localizedDescription ?? "unknown error") : nil
             let loadedDuration = item.status == .readyToPlay ? CMTimeGetSeconds(item.duration) : nil
             Task { @MainActor in
@@ -243,27 +244,25 @@ public final class PlaybackService {
 
     // MARK: System integration
 
+    /// Media keys / Now Playing commands. MediaPlayer does not promise a thread, so every handler is
+    /// `@Sendable` and hops to the main actor rather than asserting it.
     private func installRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
-        center.playCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.resume() }; return .success
+        func handler(_ action: @escaping @MainActor (PlaybackService) -> Void) -> @Sendable (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus {
+            { [weak self] _ in
+                Task { @MainActor in if let self { action(self) } }
+                return .success
+            }
         }
-        center.pauseCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.pause() }; return .success
-        }
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.togglePlayPause() }; return .success
-        }
-        center.nextTrackCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.next() }; return .success
-        }
-        center.previousTrackCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.previous() }; return .success
-        }
-        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+        center.playCommand.addTarget(handler: handler { $0.resume() })
+        center.pauseCommand.addTarget(handler: handler { $0.pause() })
+        center.togglePlayPauseCommand.addTarget(handler: handler { $0.togglePlayPause() })
+        center.nextTrackCommand.addTarget(handler: handler { $0.next() })
+        center.previousTrackCommand.addTarget(handler: handler { $0.previous() })
+        center.changePlaybackPositionCommand.addTarget { @Sendable [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             let position = event.positionTime
-            MainActor.assumeIsolated { self?.seek(to: position) }
+            Task { @MainActor in self?.seek(to: position) }
             return .success
         }
     }
@@ -280,7 +279,9 @@ public final class PlaybackService {
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
         ]
         if let data = artworkProvider?(track), let image = NSImage(data: data) {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            // The request handler runs on MediaPlayer's thread; NSImage is thread-safe for drawing.
+            nonisolated(unsafe) let art = image
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in art }
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         updateNowPlayingPlaybackState()

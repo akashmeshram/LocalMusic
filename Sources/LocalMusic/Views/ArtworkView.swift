@@ -17,15 +17,16 @@ final class ImageStore {
     }
 }
 
+/// Artwork thumbnail. Takes a resolved file URL on purpose: reading `@Environment` inside macOS
+/// `Table` cells can hit an empty environment while rows are removed and abort the process.
 struct ArtworkView: View {
-    @Environment(AppEnvironment.self) private var env
-    let fileName: String?
+    let url: URL?
     var size: CGFloat = 40
     var cornerRadius: CGFloat = 4
 
     var body: some View {
         Group {
-            if let fileName, let url = env.artwork.url(for: fileName), let image = ImageStore.shared.image(for: url) {
+            if let url, let image = ImageStore.shared.image(for: url) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
             } else {
                 ZStack {

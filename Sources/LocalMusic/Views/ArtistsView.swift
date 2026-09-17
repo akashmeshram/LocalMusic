@@ -11,7 +11,7 @@ struct ArtistsView: View {
         HSplitView {
             List(env.library.artists, selection: $selectedArtistID) { artist in
                 HStack(spacing: 10) {
-                    ArtworkView(fileName: artist.artworkFileName, size: 32, cornerRadius: 16)
+                    ArtworkView(url: env.artworkURL(artist.artworkFileName), size: 32, cornerRadius: 16)
                     VStack(alignment: .leading) {
                         Text(artist.name).lineLimit(1)
                         Text("\(artist.tracks.count) songs · \(artist.albums.count) albums").font(.caption).foregroundStyle(.secondary)
@@ -41,7 +41,7 @@ struct ArtistsView: View {
                             ForEach(artist.albums) { album in
                                 VStack(alignment: .leading, spacing: 8) {
                                     HStack(spacing: 12) {
-                                        ArtworkView(fileName: album.artworkFileName, size: 56, cornerRadius: 6)
+                                        ArtworkView(url: env.artworkURL(album.artworkFileName), size: 56, cornerRadius: 6)
                                         VStack(alignment: .leading) {
                                             Text(album.title).font(.headline)
                                             Text([album.year.map(String.init), "\(album.tracks.count) songs"].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)

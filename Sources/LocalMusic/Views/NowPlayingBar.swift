@@ -12,7 +12,7 @@ struct NowPlayingBar: View {
     var body: some View {
         HStack(spacing: 16) {
             HStack(spacing: 10) {
-                ArtworkView(fileName: playback.currentTrack?.artworkFileName, size: 44, cornerRadius: 5)
+                ArtworkView(url: env.artworkURL(playback.currentTrack?.artworkFileName), size: 44, cornerRadius: 5)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(playback.currentTrack?.title ?? "Not Playing").font(.callout.weight(.medium)).lineLimit(1)
                     Text(playback.currentTrack.map { "\($0.displayArtist) — \($0.displayAlbum)" } ?? "Select a song to play")

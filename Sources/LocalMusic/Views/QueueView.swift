@@ -24,7 +24,7 @@ struct QueueView: View {
                 List {
                     ForEach(Array(playback.queue.enumerated()), id: \.offset) { index, track in
                         HStack(spacing: 10) {
-                            ArtworkView(fileName: track.artworkFileName, size: 28, cornerRadius: 3)
+                            ArtworkView(url: env.artworkURL(track.artworkFileName), size: 28, cornerRadius: 3)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(track.title).lineLimit(1).fontWeight(index == playback.queueIndex ? .semibold : .regular)
                                 Text(track.displayArtist).font(.caption).foregroundStyle(.secondary).lineLimit(1)

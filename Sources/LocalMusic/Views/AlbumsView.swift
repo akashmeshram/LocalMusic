@@ -18,7 +18,7 @@ struct AlbumsView: View {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 22) {
                         ForEach(env.library.albums) { album in
-                            AlbumCard(album: album)
+                            AlbumCard(album: album, artworkURL: env.artworkURL(album.artworkFileName))
                                 .onTapGesture { selected = album }
                                 .contextMenu { albumMenu(album) }
                         }
@@ -52,10 +52,11 @@ struct AlbumsView: View {
 
 struct AlbumCard: View {
     let album: LibraryViewModel.AlbumGroup
+    let artworkURL: URL?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ArtworkView(fileName: album.artworkFileName, size: 170, cornerRadius: 8)
+            ArtworkView(url: artworkURL, size: 170, cornerRadius: 8)
                 .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
             Text(album.title).font(.callout.weight(.medium)).lineLimit(1)
             HStack(spacing: 4) {
@@ -78,7 +79,7 @@ struct AlbumDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 20) {
-                ArtworkView(fileName: album.artworkFileName, size: 160, cornerRadius: 10)
+                ArtworkView(url: env.artworkURL(album.artworkFileName), size: 160, cornerRadius: 10)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(album.title).font(.title.weight(.semibold))
                     Text(album.artist).font(.title3).foregroundStyle(.secondary)

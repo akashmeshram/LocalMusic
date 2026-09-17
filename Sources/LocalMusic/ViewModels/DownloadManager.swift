@@ -1,6 +1,6 @@
 import Foundation
 import Observation
-import UserNotifications
+@preconcurrency import UserNotifications
 import LocalMusicCore
 
 /// Owns the download queue. Each job runs as its own `Task` and walks the pipeline
@@ -110,7 +110,7 @@ final class DownloadManager {
         finishedSinceIdle = (0, 0)
         guard counts.complete + counts.failed >= 3, Bundle.main.bundleIdentifier != nil else { return }
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        center.requestAuthorization(options: [.alert, .sound]) { @Sendable granted, _ in
             guard granted else { return }
             let content = UNMutableNotificationContent()
             content.title = "Downloads finished"

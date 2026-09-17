@@ -117,7 +117,9 @@ Tags are written natively into M4A (passthrough export, no re-encode), MP3 (ID3v
 ```sh
 make            # debug build → build/debug/LocalMusic.app   (no Xcode needed)
 make run        # build and launch
-make test       # 81 Swift Testing tests
+make test       # 81 Swift Testing unit tests
+make e2e        # end-to-end: drives the real app through downloads, duplicates, playback, tag edits,
+                # playlists, rebuild and every view in a throwaway profile; reports crashes with stacks
 make dist       # optimized universal build + zip → build/dist/
 make install    # make dist, then copy to /Applications
 make icon       # regenerate the app icon from Scripts/make-icon.swift
@@ -151,7 +153,7 @@ Key decisions: every tool runs through `ProcessRunner` (argument arrays, no shel
 - **"The site refused to serve the media (HTTP 403)".** yt-dlp is out of date; YouTube changes often. Update it (Settings → Advanced → Check for Tool Updates tells you how).
 - **"Sign in to confirm you're not a bot".** YouTube is rate-limiting your network. Wait, update yt-dlp, or try another network; LocalMusic doesn't support cookies or logins.
 - **Certificate errors from yt-dlp** (common on corporate networks with python.org builds of yt-dlp). The app hands yt-dlp the roots macOS trusts via `SSL_CERT_FILE`; set the variable yourself to override. Verification is never disabled.
-- **"MusicBrainz is busy or down (HTTP 503)".** Per-IP rate limit, common on shared networks. The track keeps its original tags; use **Re-identify Metadata…** later.
+- **"MusicBrainz is busy or down (HTTP 503)" / "lookups are paused for a minute".** Per-IP rate limit, common on shared networks. After a few retries the app stops asking for 60 seconds so the queue keeps moving; affected tracks keep their original tags. Use **Re-identify Metadata…** later.
 - **Wrong artist/title on a fan upload.** Right-click → **Re-identify Metadata…** or **Edit Metadata…**. Prefer YouTube Music / "Topic" links when you can: they carry real metadata.
 - **Logs.** **Library → Open Logs Folder** (`~/Library/Logs/LocalMusic/`). Each queue row also has a **Technical Details** disclosure with the raw yt-dlp/ffmpeg output. Logs never contain API keys.
 

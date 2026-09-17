@@ -140,6 +140,7 @@ final class AppEnvironment {
     }
 
     var artworkService: ArtworkService { ArtworkService(cache: artwork) }
+    func artworkURL(_ fileName: String?) -> URL? { fileName.flatMap { artwork.url(for: $0) } }
     var tagWriter: TagWriterService { TagWriterService(ffmpeg: ffmpegService) }
     let metadata = MetadataService()
     let metadataCache = MetadataCache()
