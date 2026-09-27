@@ -38,6 +38,10 @@ struct ContentView: View {
             let urls = LaunchOptions.downloadURLs
             if !urls.isEmpty { env.selectedSidebar = .downloads }
             for url in urls { await env.downloads.submit(url) }
+            if let mix = LaunchOptions.mixRequest {
+                env.selectedSidebar = .downloads
+                env.downloads.submitMix(name: mix.name, links: mix.links, crossfade: env.settings.mixCrossfade)
+            }
             if let scenarios = LaunchOptions.e2eScenarios {
                 let ok = await E2ERunner(env: env).run(scenarios)
                 LaunchOptions.capture(to: LaunchOptions.screenshotDirectory ?? FileManager.default.temporaryDirectory, index: 99)

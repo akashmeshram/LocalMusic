@@ -28,7 +28,7 @@ final class E2ERunner {
 
     static let all: [String] = [
         "download-single", "download-fail", "download-playlist", "duplicate-policies", "playback",
-        "now-playing-artwork", "tag-edit", "playlists", "rebuild", "views", "identify-network",
+        "now-playing-artwork", "tag-edit", "playlists", "rebuild", "views", "mix", "mix-fail", "identify-network", "mix-live",
     ]
 
     func run(_ names: [String]) async -> Bool {
@@ -120,6 +120,65 @@ final class E2ERunner {
             try expect(kept.state == .complete, "keep-both \(kept.state)")
             try expect(env.library.tracks.count == before + 1, "keep-both count \(env.library.tracks.count)")
             env.settings.duplicatePolicy = .ask
+
+        case "mix":
+            guard env.ffmpegReady else { throw Failure("ffmpeg not available; mixes need it") }
+            let before = env.library.tracks.count
+            let links = "https://example.com/watch?v=mix-a\nhttps://example.com/watch?v=mix-b, https://example.com/watch?v=mix-c"
+            try expect(env.downloads.submitMix(name: "E2E Mix: One/Two", links: links, crossfade: 3), "submit rejected: \(env.downloads.submissionError?.message ?? "?")")
+            guard let mixID = env.downloads.mixes.last?.id else { throw Failure("mix not queued") }
+            try await waitUntil(120) { self.env.downloads.mixes.first { $0.id == mixID }?.state.isTerminal == true }
+            let mix = env.downloads.mixes.first { $0.id == mixID }!
+            try expect(mix.state == .complete, "mix state \(mix.state): \(mix.error?.message ?? "") \(mix.technicalLog.suffix(400))")
+            try expect(mix.items.allSatisfy { $0.state == .complete }, "items: \(mix.items.map(\.state.label))")
+            guard let file = mix.resultFileURL else { throw Failure("no result file") }
+            try expect(file.pathExtension == "mp3", "not mp3: \(file.lastPathComponent)")
+            try expect(FileManager.default.fileExists(atPath: file.path), "file missing: \(file.path)")
+            try expect(PathGuard(root: env.settings.musicDirectory).contains(file), "file outside library")
+            try expect(file.path.contains("/Mock Artist/Mixes/"), "not filed under Mixes: \(file.path)")
+            try expect(env.library.tracks.count == before + 1, "library count \(env.library.tracks.count) != \(before + 1)")
+            guard let track = env.library.trackByID[mix.resultTrackID ?? UUID()] else { throw Failure("mix not indexed") }
+            try expect(track.album == DownloadManager.mixAlbum && track.artist == "Mock Artist", "tags \(track.artist ?? "-") / \(track.album ?? "-")")
+            // Three 3 s clips with two 1.5 s overlaps (half of the shortest neighbour) → 6 s.
+            let probed = try await AudioMetadataReader.read(file)
+            try expect(abs(probed.duration - 6) < 0.4, "duration \(probed.duration) ≠ 6")
+            try expect(abs(track.duration - 6) < 0.01, "indexed duration \(track.duration)")
+            let frames = ID3TagWriter.parse(try Data(contentsOf: file)).frames
+            let chapters = ID3TagWriter.chapters(in: frames)
+            try expect(chapters.count == 3, "chapters \(chapters.count)")
+            try expect(chapters[1].start == 1.5 && chapters[2].start == 3, "chapter starts \(chapters.map(\.start))")
+            try expect(frames.contains { $0.id == "CTOC" }, "no CTOC")
+            try expect(probed.title == "E2E Mix: One/Two", "title \(probed.title ?? "-")")
+            try expect(incomingIsEmpty(), "incoming folder not cleaned")
+            // Plays like any other track.
+            env.playback.play(track)
+            try await waitUntil(10) { self.env.playback.isPlaying }
+            env.playback.pause()
+
+        case "mix-fail":
+            let before = env.library.tracks.count
+            try expect(!env.downloads.submitMix(name: "", links: "https://example.com/a\nhttps://example.com/b", crossfade: 1), "empty name accepted")
+            try expect(!env.downloads.submitMix(name: "x", links: "https://example.com/a", crossfade: 1), "single link accepted")
+            try expect(!env.downloads.submitMix(name: "x", links: "https://example.com/a\nnot a url", crossfade: 1), "bad link accepted")
+            env.downloads.submissionError = nil
+            try expect(env.downloads.submitMix(name: "Broken Mix", links: "https://example.com/watch?v=ok-1\nhttps://example.com/watch?v=fail-2\nhttps://example.com/watch?v=ok-3", crossfade: 0), "submit rejected")
+            guard let mixID = env.downloads.mixes.last?.id else { throw Failure("mix not queued") }
+            try await waitUntil(120) { self.env.downloads.mixes.first { $0.id == mixID }?.state.isTerminal == true }
+            let mix = env.downloads.mixes.first { $0.id == mixID }!
+            try expect(mix.state == .failed, "expected failed, got \(mix.state)")
+            try expect((mix.error?.message ?? "").contains("Song 2"), "error should name song 2: \(mix.error?.message ?? "-")")
+            try expect(mix.items[1].state == .failed, "item 2 state \(mix.items[1].state)")
+            try expect(env.library.tracks.count == before, "failed mix changed the library")
+            try expect(incomingIsEmpty(), "incoming folder not cleaned after failure")
+            // Cancelling mid-download leaves nothing behind either.
+            try expect(env.downloads.submitMix(name: "Cancelled Mix", links: "https://example.com/watch?v=c-1\nhttps://example.com/watch?v=c-2", crossfade: 0), "submit rejected")
+            let cancelID = env.downloads.mixes.last!.id
+            try await waitUntil(10) { self.env.downloads.mixes.first { $0.id == cancelID }?.state == .downloading }
+            env.downloads.cancel(cancelID)
+            try await waitUntil(30) { self.env.downloads.mixes.first { $0.id == cancelID }?.state.isTerminal == true }
+            try expect(env.downloads.mixes.first { $0.id == cancelID }?.state == .cancelled, "cancel state")
+            try expect(env.library.tracks.count == before, "cancelled mix changed the library")
+            try expect(incomingIsEmpty(), "incoming folder not cleaned after cancel")
 
         case "playback":
             let tracks = env.library.tracks.sorted { $0.title < $1.title }
@@ -219,6 +278,31 @@ final class E2ERunner {
             try expect(outcome.accepted?.release?.title == "Homogenic", "expected Homogenic, got \(outcome.accepted?.summary ?? "nothing")")
             let art = await env.coverArt.frontCover(releaseID: outcome.accepted?.release?.id, releaseGroupID: outcome.accepted?.release?.releaseGroupID)
             try expect((art?.count ?? 0) > 10_000, "no cover art")
+
+        case "mix-live":
+            // Real downloads (run without --mock): three sources from different artists → collage cover.
+            guard LaunchOptions.values(for: "--e2e-network").first == "1" else { print("  (skipped: pass --e2e-network=1)"); return }
+            guard !env.useMockDownloader else { print("  (skipped: needs the real downloader, run without --mock)"); return }
+            env.settings.autoQueryMusicBrainz = true
+            defer { env.settings.autoQueryMusicBrainz = false }
+            env.selectedSidebar = .downloads
+            let links = ["https://www.youtube.com/watch?v=sMcWOaJFuw0", "https://archive.org/details/testmp3testfile", "https://www.youtube.com/watch?v=SgJ8dyD01I8"]
+            try expect(env.downloads.submitMix(name: "Live Mix", links: links.joined(separator: "\n"), crossfade: 4), "submit rejected: \(env.downloads.submissionError?.message ?? "?")")
+            let mixID = env.downloads.mixes.last!.id
+            try await waitUntil(600) { self.env.downloads.mixes.first { $0.id == mixID }?.state.isTerminal == true }
+            let mix = env.downloads.mixes.first { $0.id == mixID }!
+            print(mix.technicalLog.split(separator: "\n").filter { $0.contains("[LocalMusic]") || $0.contains("MusicBrainz") }.joined(separator: "\n"))
+            try expect(mix.state == .complete, "mix state \(mix.state): \(mix.error?.message ?? "")")
+            guard let file = mix.resultFileURL, let track = env.library.trackByID[mix.resultTrackID ?? UUID()] else { throw Failure("no result") }
+            let probed = try await AudioMetadataReader.read(file)
+            let chapters = ID3TagWriter.chapters(in: ID3TagWriter.parse(try Data(contentsOf: file)).frames)
+            print("  file: \(file.path)\n  artist: \(track.artist ?? "-")  duration: \(Int(probed.duration))s  chapters: \(chapters.map { "\($0.title)@\(Int($0.start))s" })")
+            try expect(chapters.count == 3, "chapters \(chapters.count)")
+            try expect(track.artist == DownloadManager.variousArtists, "artist \(track.artist ?? "-")")
+            guard let art = probed.artwork, let dims = ImageInfo.dimensions(of: art) else { throw Failure("no embedded artwork") }
+            print("  artwork: \(dims.0)x\(dims.1), \(art.count) bytes")
+            try expect(dims.0 == ArtworkCollage.side, "expected a rendered collage, got \(dims)")
+            if let dir = LaunchOptions.screenshotDirectory { try? art.write(to: dir.appendingPathComponent("mix-cover.jpg")) }
 
         default:
             throw Failure("unknown scenario")

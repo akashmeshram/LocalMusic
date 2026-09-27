@@ -28,6 +28,7 @@ URL ─▶ yt-dlp ─▶ .incoming/ ─▶ identify (tags · MusicBrainz) ─▶
 - **Tag** the file itself (M4A, MP3, FLAC natively; others through ffmpeg) with title, artist, album, track/disc numbers, year, genre, composer, MusicBrainz IDs and artwork from the Cover Art Archive, the embedded art, or the video thumbnail. Audio bytes are never re-encoded when tagging.
 - **Organize** into `~/Music/LocalMusic/{Album Artist}/{Year} - {Album}/{NN} - {Title}.ext`, singles into `Artist/Singles/`, unidentified tracks into `Unknown Artist/Unknown Album/`. Sanitized names, case-insensitive collision handling, nothing ever escapes the library folder, nothing is ever overwritten without asking.
 - **Detect duplicates** by source URL, MusicBrainz recording, artist + normalized title and duration, and let you choose Skip / Keep both / Replace / Show existing.
+- **Mix** several links into one MP3: paste them in order, pick a crossfade (or hard cuts), and get a single file with chapter markers for every song. The cover is the shared album art when the songs belong together, or a mosaic of the distinct covers when they don't. Only the mix lands in the library, under `Various Artists/Mixes/`.
 - **Browse and play**: Songs table, Albums grid, Artists, Recently Added, Favorites, playlists with drag-and-drop and M3U8 import/export, an Up Next queue, shuffle, repeat, media keys and the system Now Playing widget. Everything works offline.
 - **Stay honest**: files are the source of truth, the index is rebuildable, logs are local, there are no accounts, no analytics and no cloud.
 
@@ -44,6 +45,10 @@ URL ─▶ yt-dlp ─▶ .incoming/ ─▶ identify (tags · MusicBrainz) ─▶
 | Playlist preview before downloading | Album detail |
 |---|---|
 | ![Playlist preview](docs/screenshots/playlist-preview.png) | ![Album detail](docs/screenshots/album-detail.png) |
+
+| A finished mix in the queue | Its mosaic cover (two distinct albums out of three songs) |
+|---|---|
+| ![Mix](docs/screenshots/mix.png) | <img src="docs/screenshots/mix-cover.jpg" width="300" alt="Mix cover"> |
 
 ## Quick start
 
@@ -81,6 +86,22 @@ The app searches `~/Library/Application Support/LocalMusic/bin`, `/opt/homebrew/
 
 MusicBrainz requests carry a descriptive User-Agent, are spaced ≥ 1.1 s apart, retried with backoff on 503/429, and cached for 30 days. MusicBrainz downtime never fails a download.
 
+## Mixes
+
+**Downloads → Mix…** (or ⌘⇧M) takes a name, a list of links and a crossfade length. Every link is downloaded and identified exactly like a single download, then ffmpeg joins them in one pass:
+
+```
+link 1 ─┐
+link 2 ─┼─▶ decode · 44.1 kHz stereo ─▶ acrossfade / concat ─▶ MP3 (256 kbps) ─▶ ID3 chapters + cover ─▶ Various Artists/Mixes/Name.mp3
+link 3 ─┘
+```
+
+- The crossfade never exceeds half of either neighbouring song, so short clips keep their audio; 0 s gives clean hard cuts.
+- Chapters are written as ID3 `CHAP`/`CTOC` frames with each song's title and start time, so players that support chapters (Apple Podcasts/Books, VLC, Pocket Casts, foobar2000) can jump between songs. Everything else just sees one MP3.
+- The artist is the one shared artist if every song has it, otherwise *Various Artists*. The comment tag lists every song and its source link.
+- Cover art: songs from the same album (same album + album artist, or identical image bytes) share one tile. One distinct cover is used unchanged; two to four become a 2×2 mosaic; more become 3×3, using the first nine.
+- One failing link fails the whole mix and names the song; cancelling removes every partial file. Bitrate and default crossfade live in **Settings → Downloads → Mixes**.
+
 ## Library layout
 
 ```
@@ -95,6 +116,9 @@ MusicBrainz requests carry a descriptive User-Agent, are spaced ≥ 1.1 s apart,
 ├── Kevin MacLeod/
 │   └── Singles/
 │       └── Monkeys Spinning Monkeys.m4a
+├── Various Artists/
+│   └── Mixes/
+│       └── Road Trip.mp3                   # one file, chapters per song, mosaic cover
 └── Unknown Artist/
     └── Unknown Album/
         └── Something Unidentified.m4a
@@ -117,9 +141,9 @@ Tags are written natively into M4A (passthrough export, no re-encode), MP3 (ID3v
 ```sh
 make            # debug build → build/debug/LocalMusic.app   (no Xcode needed)
 make run        # build and launch
-make test       # 81 Swift Testing unit tests
+make test       # 91 Swift Testing unit tests
 make e2e        # end-to-end: drives the real app through downloads, duplicates, playback, tag edits,
-                # playlists, rebuild and every view in a throwaway profile; reports crashes with stacks
+                # playlists, rebuild, mixes and every view in a throwaway profile; reports crashes with stacks
 make dist       # optimized universal build + zip → build/dist/
 make install    # make dist, then copy to /Applications
 make icon       # regenerate the app icon from Scripts/make-icon.swift
@@ -135,7 +159,7 @@ CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=
 # once: xcrun notarytool store-credentials localmusic --apple-id you@example.com --team-id TEAMID
 ```
 
-Handy launch flags for development: `--mock` (simulated downloads that produce playable tones), `--download=<url>`, `--select=albums|artists|playlist|…`, `--screenshot=<dir>`, and `--profile=<dir>` to run against a throwaway library.
+Handy launch flags for development: `--mock` (simulated downloads that produce playable tones), `--download=<url>`, `--mix=<name>|<url>,<url>,…`, `--select=albums|artists|playlist|…`, `--screenshot=<dir>`, and `--profile=<dir>` to run against a throwaway library.
 
 ### Architecture
 

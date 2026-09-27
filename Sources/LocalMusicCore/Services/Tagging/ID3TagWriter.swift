@@ -28,6 +28,9 @@ public struct ID3TagWriter: TagWriter {
         } else {
             frames.removeAll { $0.id == "APIC" }
         }
+        if !tags.chapters.isEmpty {
+            frames.removeAll { $0.id == "CHAP" || $0.id == "CTOC" }
+        }
         frames += Self.frames(for: tags)
         let tag = Self.buildTag(frames: frames)
         var out = Data(capacity: tag.count + original.count - parsed.audioOffset)
@@ -142,7 +145,57 @@ public struct ID3TagWriter: TagWriter {
             d.append(image)
             f.append(Frame(id: "APIC", data: d))
         }
+        f += chapterFrames(tags.chapters)
         return f
+    }
+
+    // MARK: Chapters (ID3v2 Chapter Frame Addendum)
+
+    static func chapterElementID(_ index: Int) -> String { "chp\(index)" }
+
+    /// One CHAP frame per chapter (with an embedded TIT2) plus a top-level ordered CTOC.
+    static func chapterFrames(_ chapters: [TrackChapter]) -> [Frame] {
+        guard !chapters.isEmpty else { return [] }
+        var frames: [Frame] = []
+        var toc = Data(); toc.append(Data("toc".utf8)); toc.append(0)
+        toc.append(0x03) // top-level + ordered
+        toc.append(UInt8(min(chapters.count, 255)))
+        for (i, chapter) in chapters.prefix(255).enumerated() {
+            let element = chapterElementID(i)
+            toc.append(Data(element.utf8)); toc.append(0)
+            var d = Data(element.utf8); d.append(0)
+            d.appendBE32(UInt32(max(0, chapter.start) * 1000))
+            d.appendBE32(UInt32(max(chapter.start, chapter.end) * 1000))
+            d.appendBE32(0xFFFF_FFFF); d.appendBE32(0xFFFF_FFFF) // byte offsets unused
+            if let title = text("TIT2", chapter.title) {
+                d.append(Data(title.id.utf8)); d.appendBE32(toSyncsafe(title.data.count)); d.appendBE16(0); d.append(title.data)
+            }
+            frames.append(Frame(id: "CHAP", data: d))
+        }
+        frames.insert(Frame(id: "CTOC", data: toc), at: 0)
+        return frames
+    }
+
+    /// Reads chapters back out of parsed CHAP frames (for tests, diagnostics and the reader).
+    public static func chapters(in frames: [Frame]) -> [TrackChapter] {
+        frames.filter { $0.id == "CHAP" }.compactMap { frame -> TrackChapter? in
+            let d = frame.data
+            guard let nul = d.firstIndex(of: 0) else { return nil }
+            var offset = nul - d.startIndex + 1
+            guard d.count >= offset + 16 else { return nil }
+            let start = Double(d.be32(at: offset)) / 1000; let end = Double(d.be32(at: offset + 4)) / 1000
+            offset += 16
+            var title = ""
+            while offset + 10 <= d.count {
+                guard let id = String(data: d.slice(offset, 4), encoding: .isoLatin1) else { break }
+                let size = Int(syncsafe(d.be32(at: offset + 4)))
+                offset += 10
+                guard size > 0, offset + size <= d.count else { break }
+                if id == "TIT2" { title = textValue(Frame(id: id, data: d.slice(offset, size))) ?? "" }
+                offset += size
+            }
+            return TrackChapter(title: title, start: start, end: end)
+        }
     }
 
     static func buildTag(frames: [Frame]) -> Data {

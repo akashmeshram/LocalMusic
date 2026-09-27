@@ -6,6 +6,19 @@ public enum ArtworkChange: Sendable, Hashable {
     case remove
 }
 
+/// A named span inside a file (ID3 CHAP / MP4 chapter track). Used by mixes.
+public struct TrackChapter: Sendable, Hashable, Codable {
+    public var title: String
+    public var start: TimeInterval
+    public var end: TimeInterval
+
+    public init(title: String, start: TimeInterval, end: TimeInterval) {
+        self.title = title
+        self.start = start
+        self.end = end
+    }
+}
+
 /// The editable tag set written into audio files.
 public struct TrackTags: Sendable, Hashable {
     public var title: String
@@ -22,6 +35,8 @@ public struct TrackTags: Sendable, Hashable {
     public var musicBrainzRecordingID: String?
     public var musicBrainzReleaseID: String?
     public var artwork: ArtworkChange
+    /// Chapter markers. Empty leaves any existing chapters in the file untouched.
+    public var chapters: [TrackChapter] = []
 
     public init(title: String, artist: String? = nil, albumArtist: String? = nil, album: String? = nil,
                 trackNumber: Int? = nil, trackTotal: Int? = nil, discNumber: Int? = nil, genre: String? = nil,

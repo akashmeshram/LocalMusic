@@ -9,12 +9,15 @@ import LocalMusicCore
 @Observable
 final class DownloadManager {
     private(set) var jobs: [DownloadJob] = []
+    /// Multi-song mixes; they share the queue, concurrency limit and duplicate prompts with `jobs`.
+    private(set) var mixes: [MixJob] = []
     var pendingPlaylist: PlaylistInfo?
     private(set) var isProbing = false
     var submissionError: LocalMusicError?
 
-    private unowned let env: AppEnvironment
+    unowned let env: AppEnvironment
     private var tasks: [UUID: Task<Void, Never>] = [:]
+    var mixTasks: [UUID: Task<Void, Never>] = [:]
     private var duplicateDecisions: [UUID: CheckedContinuation<DuplicateDecision, Never>] = [:]
     /// Jobs finished since the queue was last idle, for the completion notification.
     private var finishedSinceIdle: (complete: Int, failed: Int) = (0, 0)
@@ -25,7 +28,9 @@ final class DownloadManager {
 
     var activeJobs: [DownloadJob] { jobs.filter { $0.state.isActive } }
     var waitingJobs: [DownloadJob] { jobs.filter { $0.state == .waiting } }
-    var unfinishedCount: Int { jobs.filter { !$0.state.isTerminal }.count }
+    var activeMixes: [MixJob] { mixes.filter { $0.state.isActive } }
+    var unfinishedCount: Int { jobs.filter { !$0.state.isTerminal }.count + mixes.filter { !$0.state.isTerminal }.count }
+    var hasFinishedEntries: Bool { jobs.contains { $0.state.isTerminal } || mixes.contains { $0.state.isTerminal } }
 
     // MARK: Submission
 
@@ -78,11 +83,25 @@ final class DownloadManager {
     /// Starts waiting jobs while the concurrency limit allows.
     func pump() {
         let limit = max(1, env.settings.maxConcurrentDownloads)
-        var running = activeJobs.count
+        var running = activeJobs.count + activeMixes.count
+        for mix in mixes where mix.state == .waiting && running < limit {
+            startMix(mix.id)
+            running += 1
+        }
         for job in jobs where job.state == .waiting && running < limit {
             start(job.id)
             running += 1
         }
+    }
+
+    /// Bookkeeping shared by single downloads and mixes once their task ends.
+    func taskFinished(_ id: UUID, state: DownloadState) {
+        tasks[id] = nil
+        mixTasks[id] = nil
+        if state == .complete { finishedSinceIdle.complete += 1 }
+        if state == .failed { finishedSinceIdle.failed += 1 }
+        pump()
+        if unfinishedCount == 0 { queueBecameIdle() }
     }
 
     func startAll() { pump() }
@@ -93,13 +112,7 @@ final class DownloadManager {
             await self?.run(id)
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                self.tasks[id] = nil
-                if let job = self.jobs.first(where: { $0.id == id }) {
-                    if job.state == .complete { self.finishedSinceIdle.complete += 1 }
-                    if job.state == .failed { self.finishedSinceIdle.failed += 1 }
-                }
-                self.pump()
-                if self.unfinishedCount == 0 { self.queueBecameIdle() }
+                self.taskFinished(id, state: self.jobs.first { $0.id == id }?.state ?? .failed)
             }
         }
     }
@@ -125,17 +138,21 @@ final class DownloadManager {
     func cancel(_ id: UUID) {
         if let continuation = duplicateDecisions.removeValue(forKey: id) {
             update(id) { $0.pendingDuplicate = nil }
+            updateMix(id) { $0.pendingDuplicate = nil }
             continuation.resume(returning: .skip)
             tasks[id]?.cancel()
-        } else if let task = tasks[id] {
+            mixTasks[id]?.cancel()
+        } else if let task = tasks[id] ?? mixTasks[id] {
             task.cancel()
         } else {
             update(id) { $0.state = .cancelled; $0.finishedAt = Date() }
+            updateMix(id) { $0.state = .cancelled; $0.finishedAt = Date() }
         }
     }
 
     func cancelAll() {
         for job in jobs where !job.state.isTerminal { cancel(job.id) }
+        for mix in mixes where !mix.state.isTerminal { cancel(mix.id) }
     }
 
     func retry(_ id: UUID) {
@@ -149,6 +166,16 @@ final class DownloadManager {
             job.pendingDuplicate = nil
             job.candidates = []
         }
+        updateMix(id) { mix in
+            mix.state = .waiting
+            mix.error = nil
+            mix.technicalLog = ""
+            mix.finishedAt = nil
+            mix.note = nil
+            mix.phase = nil
+            mix.pendingDuplicate = nil
+            for i in mix.items.indices { mix.items[i].state = .waiting; mix.items[i].fraction = nil; mix.items[i].errorMessage = nil }
+        }
         pump()
     }
 
@@ -161,10 +188,11 @@ final class DownloadManager {
     func resolveDuplicate(_ id: UUID, _ decision: DuplicateDecision) {
         guard let continuation = duplicateDecisions.removeValue(forKey: id) else { return }
         update(id) { $0.pendingDuplicate = nil }
+        updateMix(id) { $0.pendingDuplicate = nil }
         continuation.resume(returning: decision)
     }
 
-    private func askDuplicate(_ id: UUID, match: DuplicateDetector.Match) async -> DuplicateDecision {
+    func askDuplicate(_ id: UUID, match: DuplicateDetector.Match) async -> DuplicateDecision {
         switch env.settings.duplicatePolicy {
         case .skip: return .skip
         case .keepBoth: return .keepBoth
@@ -172,6 +200,7 @@ final class DownloadManager {
         case .ask: break
         }
         update(id) { $0.pendingDuplicate = match }
+        updateMix(id) { $0.pendingDuplicate = match }
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 duplicateDecisions[id] = continuation
@@ -182,18 +211,26 @@ final class DownloadManager {
     }
 
     func remove(_ id: UUID) {
-        guard let job = jobs.first(where: { $0.id == id }), job.state.isTerminal else { return }
-        jobs.removeAll { $0.id == id }
+        if let job = jobs.first(where: { $0.id == id }), job.state.isTerminal { jobs.removeAll { $0.id == id } }
+        if let mix = mixes.first(where: { $0.id == id }), mix.state.isTerminal { mixes.removeAll { $0.id == id } }
     }
 
     func clearFinished() {
         jobs.removeAll { $0.state.isTerminal }
+        mixes.removeAll { $0.state.isTerminal }
     }
 
     private func update(_ id: UUID, _ body: (inout DownloadJob) -> Void) {
         guard let i = jobs.firstIndex(where: { $0.id == id }) else { return }
         body(&jobs[i])
     }
+
+    func updateMix(_ id: UUID, _ body: (inout MixJob) -> Void) {
+        guard let i = mixes.firstIndex(where: { $0.id == id }) else { return }
+        body(&mixes[i])
+    }
+
+    func appendMix(_ mix: MixJob) { mixes.append(mix) }
 
     private func appendLog(_ id: UUID, _ line: String) {
         update(id) { job in

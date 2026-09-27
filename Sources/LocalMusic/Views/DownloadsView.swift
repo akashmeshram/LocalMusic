@@ -4,6 +4,7 @@ import LocalMusicCore
 struct DownloadsView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var urlText = ""
+    @State private var showMixComposer = false
     @FocusState private var urlFieldFocused: Bool
 
     private var downloads: DownloadManager { env.downloads }
@@ -14,14 +15,18 @@ struct DownloadsView: View {
             urlBar
             Divider()
             if !env.missingRequiredTools.isEmpty, env.toolsChecked { DependencyBanner() }
-            if downloads.jobs.isEmpty {
+            if downloads.jobs.isEmpty && downloads.mixes.isEmpty {
                 ContentUnavailableView {
                     Label("No Downloads", systemImage: "arrow.down.circle")
                 } description: {
-                    Text("Paste a video or playlist link above. Finished tracks are filed under \(env.settings.musicDirectory.path).")
+                    Text("Paste a video or playlist link above, or choose Mix… to join several songs into one MP3. Finished tracks are filed under \(env.settings.musicDirectory.path).")
                 }
             } else {
                 List {
+                    ForEach(downloads.mixes) { mix in
+                        MixRow(mix: mix)
+                            .listRowSeparator(.visible)
+                    }
                     ForEach(downloads.jobs) { job in
                         DownloadRow(job: job)
                             .listRowSeparator(.visible)
@@ -38,12 +43,14 @@ struct DownloadsView: View {
                     Button { downloads.startAll() } label: { Label("Start", systemImage: "play.fill") }
                 }
                 Button { downloads.clearFinished() } label: { Label("Clear Finished", systemImage: "xmark.circle") }
-                    .disabled(!downloads.jobs.contains { $0.state.isTerminal })
+                    .disabled(!downloads.hasFinishedEntries)
             }
         }
         .sheet(item: $downloads.pendingPlaylist) { playlist in
             PlaylistPreviewSheet(playlist: playlist)
         }
+        .sheet(isPresented: $showMixComposer) { MixComposerView() }
+        .onChange(of: env.showMixComposerToken) { showMixComposer = true }
         .alert("Can't download", isPresented: Binding(get: { downloads.submissionError != nil }, set: { if !$0 { downloads.submissionError = nil } })) {
             Button("OK") {}
         } message: {
@@ -54,8 +61,9 @@ struct DownloadsView: View {
     }
 
     private var subtitle: String {
-        let active = downloads.activeJobs.count, waiting = downloads.waitingJobs.count
-        if active == 0 && waiting == 0 { return "\(downloads.jobs.count) items" }
+        let active = downloads.activeJobs.count + downloads.activeMixes.count
+        let waiting = downloads.waitingJobs.count + downloads.mixes.filter { $0.state == .waiting }.count
+        if active == 0 && waiting == 0 { return "\(downloads.jobs.count + downloads.mixes.count) items" }
         return "\(active) active · \(waiting) waiting"
     }
 
@@ -80,6 +88,11 @@ struct DownloadsView: View {
                 }
             }
             .disabled(downloads.isProbing || !env.ytdlpReady)
+            Button {
+                showMixComposer = true
+            } label: { Label("Mix…", systemImage: "square.stack.3d.down.right") }
+            .help("Join several links into one MP3")
+            .disabled(!env.ytdlpReady)
         }
         .padding(12)
         .background(.bar)

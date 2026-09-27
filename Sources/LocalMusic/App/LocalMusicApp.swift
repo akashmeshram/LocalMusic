@@ -68,6 +68,11 @@ enum LaunchOptions {
     }
 
     static var downloadURLs: [String] { values(for: "--download") }
+    /// `--mix=<name>|<url>,<url>,…`: queue a mix at launch (demo / screenshots).
+    static var mixRequest: (name: String, links: String)? {
+        guard let raw = values(for: "--mix").first, let bar = raw.firstIndex(of: "|") else { return nil }
+        return (String(raw[..<bar]), raw[raw.index(after: bar)...].replacingOccurrences(of: ",", with: "\n"))
+    }
     /// `--e2e=all` or `--e2e=name,name`: run end-to-end scenarios, then exit with status.
     static var e2eScenarios: [String]? { values(for: "--e2e").first?.split(separator: ",").map(String.init) }
     /// `--profile=<dir>`: keep index, caches and music under this directory (demo / test sandbox).

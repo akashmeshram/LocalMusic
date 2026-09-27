@@ -34,6 +34,11 @@ struct AppCommands: Commands {
                 env.focusURLFieldToken += 1
             }
             .keyboardShortcut("n", modifiers: .command)
+            Button("New Mix…") {
+                env.selectedSidebar = .downloads
+                env.showMixComposerToken += 1
+            }
+            .keyboardShortcut("m", modifiers: [.command, .shift])
 
             Button("Paste & Download") {
                 env.selectedSidebar = .downloads

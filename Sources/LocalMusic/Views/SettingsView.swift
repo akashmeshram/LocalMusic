@@ -37,6 +37,18 @@ struct DownloadSettingsView: View {
             Picker("When a download looks like a duplicate", selection: $settings.duplicatePolicy) {
                 ForEach(DuplicatePolicy.allCases) { Text($0.label).tag($0) }
             }
+            Section("Mixes") {
+                Picker("MP3 bitrate", selection: $settings.mixBitrate) {
+                    ForEach([128, 192, 256, 320], id: \.self) { Text("\($0) kbps").tag($0) }
+                }
+                HStack {
+                    Text("Default crossfade")
+                    Slider(value: $settings.mixCrossfade, in: 0...12, step: 0.5)
+                    Text(settings.mixCrossfade == 0 ? "hard cut" : String(format: "%.1f s", settings.mixCrossfade)).monospacedDigit().frame(width: 64, alignment: .trailing)
+                }
+                Text("Mixes join several links into one MP3 with chapter markers and are filed under \(DownloadManager.mixAlbum). Songs from different albums get a collage cover.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()

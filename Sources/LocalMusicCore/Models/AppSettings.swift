@@ -15,6 +15,8 @@ public final class AppSettings {
         maxConcurrentDownloads = max(1, min(defaults.object(forKey: Key.maxConcurrent) as? Int ?? 1, 5))
         autoStartDownloads = defaults.object(forKey: Key.autoStart) as? Bool ?? true
         duplicatePolicy = DuplicatePolicy(rawValue: defaults.string(forKey: Key.duplicatePolicy) ?? "") ?? .ask
+        mixCrossfade = max(0, min(defaults.object(forKey: Key.mixCrossfade) as? Double ?? 3, 12))
+        mixBitrate = [128, 192, 256, 320].contains(defaults.object(forKey: Key.mixBitrate) as? Int ?? 0) ? defaults.integer(forKey: Key.mixBitrate) : 256
         autoQueryMusicBrainz = defaults.object(forKey: Key.autoQueryMB) as? Bool ?? true
         minimumAutoMatchConfidence = defaults.object(forKey: Key.minConfidence) as? Double ?? 0.85
         preferEarliestRelease = defaults.object(forKey: Key.preferEarliest) as? Bool ?? true
@@ -39,6 +41,10 @@ public final class AppSettings {
     public var maxConcurrentDownloads: Int { didSet { defaults.set(maxConcurrentDownloads, forKey: Key.maxConcurrent) } }
     public var autoStartDownloads: Bool { didSet { defaults.set(autoStartDownloads, forKey: Key.autoStart) } }
     public var duplicatePolicy: DuplicatePolicy { didSet { defaults.set(duplicatePolicy.rawValue, forKey: Key.duplicatePolicy) } }
+    /// Default crossfade (seconds) offered when composing a mix. 0 = hard cuts.
+    public var mixCrossfade: Double { didSet { defaults.set(mixCrossfade, forKey: Key.mixCrossfade) } }
+    /// MP3 bitrate (kbps) used for mixes.
+    public var mixBitrate: Int { didSet { defaults.set(mixBitrate, forKey: Key.mixBitrate) } }
 
     // MARK: Metadata
     public var autoQueryMusicBrainz: Bool { didSet { defaults.set(autoQueryMusicBrainz, forKey: Key.autoQueryMB) } }
@@ -83,6 +89,8 @@ public final class AppSettings {
         static let maxConcurrent = "downloads.maxConcurrent"
         static let autoStart = "downloads.autoStart"
         static let duplicatePolicy = "downloads.duplicatePolicy"
+        static let mixCrossfade = "mix.crossfade"
+        static let mixBitrate = "mix.bitrate"
         static let autoQueryMB = "metadata.autoQueryMusicBrainz"
         static let minConfidence = "metadata.minimumAutoMatchConfidence"
         static let preferEarliest = "metadata.preferEarliestRelease"

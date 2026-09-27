@@ -67,6 +67,7 @@ final class AppEnvironment {
     var ytdlpInstallError: LocalMusicError?
     var selectedSidebar: SidebarItem? = .songs
     var focusURLFieldToken = 0
+    var showMixComposerToken = 0
 
     private(set) var library: LibraryViewModel!
     private(set) var downloads: DownloadManager!
