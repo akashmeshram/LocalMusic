@@ -42,11 +42,20 @@ struct ContentView: View {
                 env.selectedSidebar = .downloads
                 env.downloads.submitMix(name: mix.name, links: mix.links, crossfade: env.settings.mixCrossfade)
             }
+            if let request = LaunchOptions.videoExportRequest {
+                env.selectedSidebar = .downloads
+                if let track = env.library.tracks.first(where: { $0.title == request.title }) {
+                    env.downloads.submitVideoExport(track: track, image: request.image, output: request.output)
+                }
+            }
             if let scenarios = LaunchOptions.e2eScenarios {
                 let ok = await E2ERunner(env: env).run(scenarios)
                 LaunchOptions.capture(to: LaunchOptions.screenshotDirectory ?? FileManager.default.temporaryDirectory, index: 99)
                 exit(ok ? 0 : 1)
             }
+        }
+        .sheet(item: Binding(get: { env.videoExportTrack }, set: { env.videoExportTrack = $0 })) { track in
+            VideoExportView(track: track)
         }
         .alert("Startup problem", isPresented: Binding(get: { env.startupError != nil }, set: { if !$0 { env.startupError = nil } })) {
             Button("OK") {}

@@ -11,6 +11,8 @@ final class DownloadManager {
     private(set) var jobs: [DownloadJob] = []
     /// Multi-song mixes; they share the queue, concurrency limit and duplicate prompts with `jobs`.
     private(set) var mixes: [MixJob] = []
+    /// Still-image video exports; ffmpeg only, queued behind the same concurrency limit.
+    private(set) var videos: [VideoExportJob] = []
     var pendingPlaylist: PlaylistInfo?
     private(set) var isProbing = false
     var submissionError: LocalMusicError?
@@ -18,6 +20,7 @@ final class DownloadManager {
     unowned let env: AppEnvironment
     private var tasks: [UUID: Task<Void, Never>] = [:]
     var mixTasks: [UUID: Task<Void, Never>] = [:]
+    var videoTasks: [UUID: Task<Void, Never>] = [:]
     private var duplicateDecisions: [UUID: CheckedContinuation<DuplicateDecision, Never>] = [:]
     /// Jobs finished since the queue was last idle, for the completion notification.
     private var finishedSinceIdle: (complete: Int, failed: Int) = (0, 0)
@@ -29,8 +32,9 @@ final class DownloadManager {
     var activeJobs: [DownloadJob] { jobs.filter { $0.state.isActive } }
     var waitingJobs: [DownloadJob] { jobs.filter { $0.state == .waiting } }
     var activeMixes: [MixJob] { mixes.filter { $0.state.isActive } }
-    var unfinishedCount: Int { jobs.filter { !$0.state.isTerminal }.count + mixes.filter { !$0.state.isTerminal }.count }
-    var hasFinishedEntries: Bool { jobs.contains { $0.state.isTerminal } || mixes.contains { $0.state.isTerminal } }
+    var activeVideos: [VideoExportJob] { videos.filter { $0.state.isActive } }
+    var unfinishedCount: Int { jobs.filter { !$0.state.isTerminal }.count + mixes.filter { !$0.state.isTerminal }.count + videos.filter { !$0.state.isTerminal }.count }
+    var hasFinishedEntries: Bool { jobs.contains { $0.state.isTerminal } || mixes.contains { $0.state.isTerminal } || videos.contains { $0.state.isTerminal } }
 
     // MARK: Submission
 
@@ -83,7 +87,11 @@ final class DownloadManager {
     /// Starts waiting jobs while the concurrency limit allows.
     func pump() {
         let limit = max(1, env.settings.maxConcurrentDownloads)
-        var running = activeJobs.count + activeMixes.count
+        var running = activeJobs.count + activeMixes.count + activeVideos.count
+        for video in videos where video.state == .waiting && running < limit {
+            startVideo(video.id)
+            running += 1
+        }
         for mix in mixes where mix.state == .waiting && running < limit {
             startMix(mix.id)
             running += 1
@@ -98,6 +106,7 @@ final class DownloadManager {
     func taskFinished(_ id: UUID, state: DownloadState) {
         tasks[id] = nil
         mixTasks[id] = nil
+        videoTasks[id] = nil
         if state == .complete { finishedSinceIdle.complete += 1 }
         if state == .failed { finishedSinceIdle.failed += 1 }
         pump()
@@ -142,17 +151,19 @@ final class DownloadManager {
             continuation.resume(returning: .skip)
             tasks[id]?.cancel()
             mixTasks[id]?.cancel()
-        } else if let task = tasks[id] ?? mixTasks[id] {
+        } else if let task = tasks[id] ?? mixTasks[id] ?? videoTasks[id] {
             task.cancel()
         } else {
             update(id) { $0.state = .cancelled; $0.finishedAt = Date() }
             updateMix(id) { $0.state = .cancelled; $0.finishedAt = Date() }
+            updateVideo(id) { $0.state = .cancelled; $0.finishedAt = Date() }
         }
     }
 
     func cancelAll() {
         for job in jobs where !job.state.isTerminal { cancel(job.id) }
         for mix in mixes where !mix.state.isTerminal { cancel(mix.id) }
+        for video in videos where !video.state.isTerminal { cancel(video.id) }
     }
 
     func retry(_ id: UUID) {
@@ -175,6 +186,14 @@ final class DownloadManager {
             mix.phase = nil
             mix.pendingDuplicate = nil
             for i in mix.items.indices { mix.items[i].state = .waiting; mix.items[i].fraction = nil; mix.items[i].errorMessage = nil }
+        }
+        updateVideo(id) { video in
+            video.state = .waiting
+            video.error = nil
+            video.fraction = nil
+            video.technicalLog = ""
+            video.finishedAt = nil
+            video.note = nil
         }
         pump()
     }
@@ -213,11 +232,13 @@ final class DownloadManager {
     func remove(_ id: UUID) {
         if let job = jobs.first(where: { $0.id == id }), job.state.isTerminal { jobs.removeAll { $0.id == id } }
         if let mix = mixes.first(where: { $0.id == id }), mix.state.isTerminal { mixes.removeAll { $0.id == id } }
+        if let video = videos.first(where: { $0.id == id }), video.state.isTerminal { videos.removeAll { $0.id == id } }
     }
 
     func clearFinished() {
         jobs.removeAll { $0.state.isTerminal }
         mixes.removeAll { $0.state.isTerminal }
+        videos.removeAll { $0.state.isTerminal }
     }
 
     private func update(_ id: UUID, _ body: (inout DownloadJob) -> Void) {
@@ -231,6 +252,13 @@ final class DownloadManager {
     }
 
     func appendMix(_ mix: MixJob) { mixes.append(mix) }
+
+    func updateVideo(_ id: UUID, _ body: (inout VideoExportJob) -> Void) {
+        guard let i = videos.firstIndex(where: { $0.id == id }) else { return }
+        body(&videos[i])
+    }
+
+    func appendVideo(_ video: VideoExportJob) { videos.append(video) }
 
     private func appendLog(_ id: UUID, _ line: String) {
         update(id) { job in

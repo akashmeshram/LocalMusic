@@ -154,6 +154,7 @@ struct TrackContextMenu: View {
             if let identifying { Button("Re-identify Metadata…") { identifying.wrappedValue = first }.disabled(tracks.count != 1) }
             Button("Reveal in Finder") { env.library.reveal(first) }.disabled(tracks.count != 1)
             Button("Copy Source URL") { env.library.copySourceURL(first) }.disabled(tracks.count != 1 || first.sourceURL == nil)
+            Button("Export Video…") { env.videoExportTrack = first }.disabled(tracks.count != 1)
             if let onDelete {
                 Divider()
                 Button("Delete…", role: .destructive) { onDelete(tracks) }

@@ -29,6 +29,7 @@ URL ─▶ yt-dlp ─▶ .incoming/ ─▶ identify (tags · MusicBrainz) ─▶
 - **Organize** into `~/Music/LocalMusic/{Album Artist}/{Year} - {Album}/{NN} - {Title}.ext`, singles into `Artist/Singles/`, unidentified tracks into `Unknown Artist/Unknown Album/`. Sanitized names, case-insensitive collision handling, nothing ever escapes the library folder, nothing is ever overwritten without asking.
 - **Detect duplicates** by source URL, MusicBrainz recording, artist + normalized title and duration, and let you choose Skip / Keep both / Replace / Show existing.
 - **Mix** several links into one MP3: paste them in order, pick a crossfade (or hard cuts), and get a single file with chapter markers for every song. The cover is the shared album art when the songs belong together, or a mosaic of the distinct covers when they don't. Only the mix lands in the library, under `Various Artists/Mixes/`.
+- **Export a video** of any track for YouTube: right-click → *Export Video…*, drop in a photo, and get a 1080p H.264/AAC MP4 of the photo fitted over a blurred copy of itself, plus a text file with timestamped chapters and source links for the description. Nothing is uploaded; you do that.
 - **Browse and play**: Songs table, Albums grid, Artists, Recently Added, Favorites, playlists with drag-and-drop and M3U8 import/export, an Up Next queue, shuffle, repeat, media keys and the system Now Playing widget. Everything works offline.
 - **Stay honest**: files are the source of truth, the index is rebuildable, logs are local, there are no accounts, no analytics and no cloud.
 
@@ -49,6 +50,10 @@ URL ─▶ yt-dlp ─▶ .incoming/ ─▶ identify (tags · MusicBrainz) ─▶
 | A finished mix in the queue | Its mosaic cover (two distinct albums out of three songs) |
 |---|---|
 | ![Mix](docs/screenshots/mix.png) | <img src="docs/screenshots/mix-cover.jpg" width="300" alt="Mix cover"> |
+
+| A video export in the queue | A frame of the result (portrait photo, 1920×1080) |
+|---|---|
+| ![Video export](docs/screenshots/video.png) | ![Video frame](docs/screenshots/video-frame.jpg) |
 
 ## Quick start
 
@@ -102,6 +107,21 @@ link 3 ─┘
 - Cover art: songs from the same album (same album + album artist, or identical image bytes) share one tile. One distinct cover is used unchanged; two to four become a 2×2 mosaic; more become 3×3, using the first nine.
 - One failing link fails the whole mix and names the song; cancelling removes every partial file. Bitrate and default crossfade live in **Settings → Downloads → Mixes**.
 
+## Video export
+
+Right-click any track (a mix or a single song) and choose **Export Video…**. Drop a photo on the sheet or pick one, then choose where to save (the panel defaults to `~/Movies`). The render runs in the Downloads queue and never touches the library.
+
+```
+photo ─▶ fit inside 1920×1080 ─┐
+photo ─▶ cover, blur, darken ──┴─▶ overlay ─▶ H.264 (1 fps, CRF 20) ─┐
+track.mp3 ──────────────────────────▶ AAC 192 kbps ───────────────────┴─▶ Name.mp4  +  Name.txt
+```
+
+- The photo is never cropped: portrait or square images sit centred over a blurred copy of themselves. Any format macOS can read works (JPEG, PNG, HEIC, TIFF).
+- `Name.txt` holds the title, artist, a `Tracklist:` with `m:ss` timestamps from the ID3 chapters, and a `Sources:` list from the track's source link and the mix comment. Paste it into the YouTube description and YouTube turns the timestamps into chapters.
+- The MP4 also carries a QuickTime chapter track, so QuickTime Player and VLC show the songs too.
+- `+faststart` is set, the frame rate is 1 fps and a five-minute mix comes out around 20 MB. Cancelling or a failure removes the partial file; the save panel is the only place an existing file is confirmed for overwriting.
+
 ## Library layout
 
 ```
@@ -141,9 +161,9 @@ Tags are written natively into M4A (passthrough export, no re-encode), MP3 (ID3v
 ```sh
 make            # debug build → build/debug/LocalMusic.app   (no Xcode needed)
 make run        # build and launch
-make test       # 91 Swift Testing unit tests
+make test       # 99 Swift Testing unit tests
 make e2e        # end-to-end: drives the real app through downloads, duplicates, playback, tag edits,
-                # playlists, rebuild, mixes and every view in a throwaway profile; reports crashes with stacks
+                # playlists, rebuild, mixes, video export and every view in a throwaway profile; reports crashes with stacks
 make dist       # optimized universal build + zip → build/dist/
 make install    # make dist, then copy to /Applications
 make icon       # regenerate the app icon from Scripts/make-icon.swift
@@ -159,7 +179,7 @@ CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=
 # once: xcrun notarytool store-credentials localmusic --apple-id you@example.com --team-id TEAMID
 ```
 
-Handy launch flags for development: `--mock` (simulated downloads that produce playable tones), `--download=<url>`, `--mix=<name>|<url>,<url>,…`, `--select=albums|artists|playlist|…`, `--screenshot=<dir>`, and `--profile=<dir>` to run against a throwaway library.
+Handy launch flags for development: `--mock` (simulated downloads that produce playable tones), `--download=<url>`, `--mix=<name>|<url>,<url>,…`, `--export-video=<track title>|<image>|<out.mp4>`, `--select=albums|artists|playlist|…`, `--screenshot=<dir>`, and `--profile=<dir>` to run against a throwaway library.
 
 ### Architecture
 

@@ -28,7 +28,7 @@ final class E2ERunner {
 
     static let all: [String] = [
         "download-single", "download-fail", "download-playlist", "duplicate-policies", "playback",
-        "now-playing-artwork", "tag-edit", "playlists", "rebuild", "views", "mix", "mix-fail", "identify-network", "mix-live",
+        "now-playing-artwork", "tag-edit", "playlists", "rebuild", "views", "mix", "mix-fail", "video", "identify-network", "mix-live",
     ]
 
     func run(_ names: [String]) async -> Bool {
@@ -179,6 +179,58 @@ final class E2ERunner {
             try expect(env.downloads.mixes.first { $0.id == cancelID }?.state == .cancelled, "cancel state")
             try expect(env.library.tracks.count == before, "cancelled mix changed the library")
             try expect(incomingIsEmpty(), "incoming folder not cleaned after cancel")
+
+        case "video":
+            guard env.ffmpegReady, let ffprobe = env.tools[.ffprobe]?.path else { throw Failure("ffmpeg/ffprobe not available; video export needs them") }
+            // A mix gives us chapters to check in the description file.
+            try expect(env.downloads.submitMix(name: "E2E Video Mix", links: "https://example.com/watch?v=v-a\nhttps://example.com/watch?v=v-b", crossfade: 0), "mix submit rejected")
+            guard let mixID = env.downloads.mixes.last?.id else { throw Failure("mix not queued") }
+            try await waitUntil(120) { self.env.downloads.mixes.first { $0.id == mixID }?.state.isTerminal == true }
+            guard let mix = env.downloads.mixes.first(where: { $0.id == mixID }), mix.state == .complete,
+                  let track = env.library.trackByID[mix.resultTrackID ?? UUID()] else { throw Failure("mix did not complete") }
+
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lm-e2e-video-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let photo = dir.appendingPathComponent("photo.png")
+            try solidPNG().write(to: photo)
+            let out = dir.appendingPathComponent("E2E Video.mp4")
+
+            // Rejections: output inside the music library, unreadable image.
+            try expect(!env.downloads.submitVideoExport(track: track, image: photo, output: env.settings.musicDirectory.appendingPathComponent("x.mp4")), "accepted output inside the library")
+            try expect(!env.downloads.submitVideoExport(track: track, image: dir.appendingPathComponent("missing.png"), output: out), "accepted missing image")
+            env.downloads.submissionError = nil
+
+            try expect(env.downloads.submitVideoExport(track: track, image: photo, output: out), "submit rejected: \(env.downloads.submissionError?.message ?? "?")")
+            guard let videoID = env.downloads.videos.last?.id else { throw Failure("video not queued") }
+            try await waitUntil(90) { self.env.downloads.videos.first { $0.id == videoID }?.state.isTerminal == true }
+            let job = env.downloads.videos.first { $0.id == videoID }!
+            try expect(job.state == .complete, "video state \(job.state): \(job.error?.message ?? "") \(job.technicalLog.suffix(400))")
+            try expect(FileManager.default.fileExists(atPath: out.path), "mp4 missing")
+            let text = try String(contentsOf: job.descriptionURL, encoding: .utf8)
+            try expect(text.hasPrefix("E2E Video Mix\nMock Artist\n"), "description header: \(text.prefix(60))")
+            try expect(text.contains("0:00 ") && text.contains("0:03 "), "chapter timestamps missing: \(text)")
+            try expect(text.contains("https://example.com/watch?v=v-a") && text.contains("https://example.com/watch?v=v-b"), "sources missing: \(text)")
+            let probe = try await ProcessRunner.run(ffprobe, arguments: ["-v", "error", "-print_format", "json", "-show_streams", "-show_format", out.path])
+            let json = (try? JSONSerialization.jsonObject(with: Data(probe.stdout.utf8)) as? [String: Any]) ?? [:]
+            let streams = json["streams"] as? [[String: Any]] ?? []
+            let video = streams.first { $0["codec_type"] as? String == "video" } ?? [:]
+            let audio = streams.first { $0["codec_type"] as? String == "audio" } ?? [:]
+            try expect(video["codec_name"] as? String == "h264" && video["width"] as? Int == 1920 && video["height"] as? Int == 1080, "video stream \(video)")
+            try expect(audio["codec_name"] as? String == "aac", "audio stream \(audio)")
+            let duration = Double((json["format"] as? [String: Any])?["duration"] as? String ?? "") ?? 0
+            try expect(abs(duration - 6) < 0.5, "duration \(duration) ≠ 6")
+            try expect(!FileManager.default.fileExists(atPath: FileManager.default.temporaryDirectory.appendingPathComponent("LocalMusic-video-\(videoID.uuidString)").path), "temp dir not cleaned")
+
+            // A corrupt image fails cleanly and leaves no file behind.
+            let bad = dir.appendingPathComponent("bad.png")
+            try Data("not an image".utf8).write(to: bad)
+            let badOut = dir.appendingPathComponent("Bad.mp4")
+            try expect(env.downloads.submitVideoExport(track: track, image: bad, output: badOut), "corrupt image rejected at submit (should fail in the job)")
+            let badID = env.downloads.videos.last!.id
+            try await waitUntil(60) { self.env.downloads.videos.first { $0.id == badID }?.state.isTerminal == true }
+            try expect(env.downloads.videos.first { $0.id == badID }?.state == .failed, "corrupt image did not fail")
+            try expect(!FileManager.default.fileExists(atPath: badOut.path), "partial output left behind")
 
         case "playback":
             let tracks = env.library.tracks.sorted { $0.title < $1.title }

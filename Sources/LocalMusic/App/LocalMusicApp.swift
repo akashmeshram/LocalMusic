@@ -73,6 +73,13 @@ enum LaunchOptions {
         guard let raw = values(for: "--mix").first, let bar = raw.firstIndex(of: "|") else { return nil }
         return (String(raw[..<bar]), raw[raw.index(after: bar)...].replacingOccurrences(of: ",", with: "\n"))
     }
+    /// `--export-video=<track title>|<image path>|<output .mp4>`: queue a video export at launch (demo / screenshots).
+    static var videoExportRequest: (title: String, image: URL, output: URL)? {
+        guard let raw = values(for: "--export-video").first else { return nil }
+        let parts = raw.split(separator: "|", maxSplits: 2).map(String.init)
+        guard parts.count == 3 else { return nil }
+        return (parts[0], URL(fileURLWithPath: parts[1]), URL(fileURLWithPath: parts[2]))
+    }
     /// `--e2e=all` or `--e2e=name,name`: run end-to-end scenarios, then exit with status.
     static var e2eScenarios: [String]? { values(for: "--e2e").first?.split(separator: ",").map(String.init) }
     /// `--profile=<dir>`: keep index, caches and music under this directory (demo / test sandbox).

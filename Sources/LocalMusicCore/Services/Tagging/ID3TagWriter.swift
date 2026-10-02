@@ -177,6 +177,34 @@ public struct ID3TagWriter: TagWriter {
     }
 
     /// Reads chapters back out of parsed CHAP frames (for tests, diagnostics and the reader).
+    /// The first COMM frame's text (encoding byte, 3-letter language, null-terminated short
+    /// description, then the comment). UTF-8, Latin-1 and UTF-16 encodings are handled.
+    public static func comment(in frames: [Frame]) -> String? {
+        guard let frame = frames.first(where: { $0.id == "COMM" }), frame.data.count > 4 else { return nil }
+        let d = frame.data
+        let encoding = d[d.startIndex]
+        let body = d[(d.startIndex + 4)...]
+        func decode(_ bytes: Data) -> String? {
+            switch encoding {
+            case 0x00: return String(data: bytes, encoding: .isoLatin1)
+            case 0x01: return String(data: bytes, encoding: .utf16)
+            case 0x02: return String(data: bytes, encoding: .utf16BigEndian)
+            default: return String(data: bytes, encoding: .utf8)
+            }
+        }
+        if encoding == 0x01 || encoding == 0x02 {
+            // Two-byte terminator between description and text.
+            var i = body.startIndex
+            while i + 1 < body.endIndex {
+                if body[i] == 0 && body[i + 1] == 0 { return decode(body[(i + 2)...]) }
+                i += 2
+            }
+            return nil
+        }
+        guard let zero = body.firstIndex(of: 0) else { return nil }
+        return decode(body[(zero + 1)...])
+    }
+
     public static func chapters(in frames: [Frame]) -> [TrackChapter] {
         frames.filter { $0.id == "CHAP" }.compactMap { frame -> TrackChapter? in
             let d = frame.data

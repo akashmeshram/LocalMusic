@@ -68,6 +68,8 @@ final class AppEnvironment {
     var selectedSidebar: SidebarItem? = .songs
     var focusURLFieldToken = 0
     var showMixComposerToken = 0
+    /// Track whose "Export Video…" sheet is open; set from any track context menu.
+    var videoExportTrack: TrackRecord?
 
     private(set) var library: LibraryViewModel!
     private(set) var downloads: DownloadManager!

@@ -15,14 +15,17 @@ struct DownloadsView: View {
             urlBar
             Divider()
             if !env.missingRequiredTools.isEmpty, env.toolsChecked { DependencyBanner() }
-            if downloads.jobs.isEmpty && downloads.mixes.isEmpty {
+            if downloads.jobs.isEmpty && downloads.mixes.isEmpty && downloads.videos.isEmpty {
                 ContentUnavailableView {
                     Label("No Downloads", systemImage: "arrow.down.circle")
                 } description: {
-                    Text("Paste a video or playlist link above, or choose Mix… to join several songs into one MP3. Finished tracks are filed under \(env.settings.musicDirectory.path).")
+                    Text("Paste a video or playlist link above, or choose Mix… to join several songs into one MP3. Right-click any track for Export Video…. Finished tracks are filed under \(env.settings.musicDirectory.path).")
                 }
             } else {
                 List {
+                    ForEach(downloads.videos) { video in
+                        VideoRow(job: video)
+                    }
                     ForEach(downloads.mixes) { mix in
                         MixRow(mix: mix)
                             .listRowSeparator(.visible)
@@ -61,9 +64,9 @@ struct DownloadsView: View {
     }
 
     private var subtitle: String {
-        let active = downloads.activeJobs.count + downloads.activeMixes.count
-        let waiting = downloads.waitingJobs.count + downloads.mixes.filter { $0.state == .waiting }.count
-        if active == 0 && waiting == 0 { return "\(downloads.jobs.count + downloads.mixes.count) items" }
+        let active = downloads.activeJobs.count + downloads.activeMixes.count + downloads.activeVideos.count
+        let waiting = downloads.waitingJobs.count + downloads.mixes.filter { $0.state == .waiting }.count + downloads.videos.filter { $0.state == .waiting }.count
+        if active == 0 && waiting == 0 { return "\(downloads.jobs.count + downloads.mixes.count + downloads.videos.count) items" }
         return "\(active) active · \(waiting) waiting"
     }
 
